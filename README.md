@@ -36,7 +36,7 @@ Main flow: animated splash → welcome → guest Explore → campsite → condit
 → account gate → signup → location demo → Explore → campsite → dates → review
 → simulated booking → trip → share → invitation → accept/decline.
 
-The five tabs are Explore, Saved, Trips, Alerts and Profile. Filters, illustrative
+The five tabs are Explore, Trips, Saved, Alerts and Profile. Filters, illustrative
 map pins, saved campsites, profile edits, notifications, Plus upgrade/cancellation,
 booking outcomes, date error examples, invitation expiry and offline snapshots
 are connected. Open **Demo · Guide** from the top of any screen to inspect the
@@ -73,7 +73,7 @@ editable fields and screen width; screenshots document the coded result.
 
 ## Verification and submission
 
-103 passing tests walk signup, booking, sharing, five-tab navigation, filters, profile
+106 passing tests walk signup, booking, sharing, five-tab navigation, filters, profile
 validation, Plus and offline previews. Each route is rendered at 390 × 844 with
 layout exceptions checked. [Screenshots](docs/screenshots) are actual Flutter
 renders of the coded screens, not Figma exports.
@@ -84,11 +84,7 @@ Regenerate screenshots explicitly:
 flutter test --dart-define=SCREENSHOTS=true --update-goldens
 ```
 
-Verified locally: clean `flutter analyze`, 103 passing tests, production web build,
-Android debug APK build, and Chrome launch without runtime errors. iOS project
-files are included; an iOS build was not tested.
-
-Submit the repository with tag **coded-ui-v1.0**, or the screenshots as permitted
+Submit the repository with tag **coded-ui-v1.1**, or the screenshots as permitted
 by the assignment. This repository does not submit anything to Camino.
 
 ## Code layout

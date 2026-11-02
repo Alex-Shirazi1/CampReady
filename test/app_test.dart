@@ -17,11 +17,20 @@ void main() {
     loader.addFont(rootBundle.load('assets/fonts/Roboto-Bold.ttf'));
     await loader.load();
   });
-  Future<void> open(WidgetTester tester, String route) async {
+  Future<void> open(
+    WidgetTester tester,
+    String route, [
+    DemoState? state,
+  ]) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     await tester.pumpWidget(
-      CampReady(key: UniqueKey(), screens: screens, initialRoute: '/$route'),
+      CampReady(
+        key: UniqueKey(),
+        screens: screens,
+        initialRoute: '/$route',
+        initialState: state,
+      ),
     );
     await tester.pump(const Duration(milliseconds: 300));
   }
@@ -139,10 +148,101 @@ void main() {
     expect(find.text('Offline trip summary'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('Cancel discards notification changes and Save keeps them', (
+    tester,
+  ) async {
+    final state = DemoState();
+    await open(tester, 'preferences', state);
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    await tap(tester, 'Cancel');
+    expect(state.alerts, isTrue);
+    await open(tester, 'preferences', state);
+    await tester.tap(find.byType(SwitchListTile));
+    await tester.pumpAndSettle();
+    await tap(tester, 'Save preferences');
+    expect(state.alerts, isFalse);
+  });
+  testWidgets('Each booking keeps its dates, response and offline copy', (
+    tester,
+  ) async {
+    final state = DemoState()
+      ..signedIn = true
+      ..plus = true;
+    await open(tester, 'dates', state);
+    await tap(tester, 'October 23–25');
+    await tap(tester, 'Use selected dates');
+    await tap(tester, 'Request to book · Demo');
+    await tap(tester, 'View trip');
+    await tap(tester, 'Booking response');
+    await tap(tester, 'Host accepts');
+    await tap(tester, 'Return to trip');
+    await tap(tester, 'Download summary');
+    await tap(tester, 'Complete download');
+    await open(tester, 'explore', state);
+    await tap(tester, 'Sunset Ridge  ›');
+    await tap(tester, 'Plan a trip here');
+    expect(find.text('Sunset Ridge · October 2026'), findsOneWidget);
+    await tap(tester, 'Use selected dates');
+    await tap(tester, 'Request to book · Demo');
+    await tap(tester, 'View trip');
+    await tap(tester, 'Share & group');
+    expect(find.text('Sunset Ridge'), findsWidgets);
+    expect(state.trip.status, 'Request pending');
+    await open(tester, 'alerts', state);
+    await tap(tester, 'Redwood: fire restriction');
+    await tap(tester, 'View affected trip');
+    expect(state.site, 'Redwood Grove');
+    expect(state.trip.dates, 'Oct 23–25, 2026');
+    expect(state.trip.status, 'Accepted');
+    expect(state.trip.downloadedDates, state.trip.dates);
+    state.trip.dates = 'Oct 30–Nov 1, 2026';
+    await open(tester, 'downloaded-summaries', state);
+    await tap(tester, 'Redwood Grove · Oct 23–25, 2026');
+    expect(find.text('Your offline copy is older'), findsOneWidget);
+    expect(find.text('Oct 23–25, 2026'), findsOneWidget);
+  });
+  testWidgets('Incompatible filters reset and Plus profile keeps membership', (
+    tester,
+  ) async {
+    final state = DemoState()
+      ..travelers = '4 travelers'
+      ..plus = true
+      ..signedIn = true;
+    await open(tester, 'filters', state);
+    await tap(tester, 'Show matching campsites');
+    await tap(tester, 'Reset filters');
+    await tap(tester, 'Show matching campsites');
+    expect(find.text('Matching campsites'), findsOneWidget);
+    await open(tester, 'profileplus', state);
+    await tap(tester, 'Edit profile');
+    await tester.enterText(find.byType(TextFormField), 'Alex');
+    await tap(tester, 'Save profile');
+    await tap(tester, 'Done');
+    expect(find.text('Manage membership'), findsWidgets);
+  });
   for (final screen in screens) {
     final route = screen['route'] as String;
     testWidgets('Render $route', (tester) async {
-      await open(tester, route);
+      final state = DemoState();
+      if (route.startsWith('ridge')) state.site = 'Sunset Ridge';
+      if ([
+        'trips',
+        'alerts',
+        'downloaded',
+        'downloaded-summaries',
+        'ready-for-offline-use',
+        'your-offline-copy-is-older',
+      ].contains(route)) {
+        state.trips.add(state.site);
+        state.trip.downloadedDates = route == 'your-offline-copy-is-older'
+            ? 'Oct 23–25, 2026'
+            : state.trip.dates;
+      }
+      if (route == 'your-camping-group') {
+        state.trip.invitation = 'Invitation pending · friend@example.com';
+      }
+      await open(tester, route, state);
       expect(tester.takeException(), isNull, reason: route);
       if (const bool.fromEnvironment('SCREENSHOTS')) {
         await tester.runAsync(() async {
