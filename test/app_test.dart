@@ -1,21 +1,19 @@
-import 'dart:convert';
-import 'dart:io';
-
+import 'package:campready/screens.dart';
 import 'package:campready/app.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final screens = (jsonDecode(
-    File('assets/screens.json').readAsStringSync(),
-  ) as List).cast<Map<String, dynamic>>();
   setUpAll(() async {
     final loader = FontLoader('Roboto');
     loader.addFont(rootBundle.load('assets/fonts/Roboto-Regular.ttf'));
     loader.addFont(rootBundle.load('assets/fonts/Roboto-Medium.ttf'));
     loader.addFont(rootBundle.load('assets/fonts/Roboto-Bold.ttf'));
     await loader.load();
+    final icons = FontLoader('MaterialIcons');
+    icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
   });
   Future<void> open(
     WidgetTester tester,
@@ -25,12 +23,7 @@ void main() {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     await tester.pumpWidget(
-      CampReady(
-        key: UniqueKey(),
-        screens: screens,
-        initialRoute: '/$route',
-        initialState: state,
-      ),
+      CampReady(key: UniqueKey(), initialRoute: '/$route', initialState: state),
     );
     await tester.pump(const Duration(milliseconds: 300));
   }
@@ -221,8 +214,62 @@ void main() {
     await tap(tester, 'Done');
     expect(find.text('Manage membership'), findsWidgets);
   });
-  for (final screen in screens) {
-    final route = screen['route'] as String;
+  testWidgets(
+    'Staying signed in retains Plus and zero trips opens its empty screen',
+    (tester) async {
+      final state = DemoState()
+        ..signedIn = true
+        ..plus = true;
+      await open(tester, 'profileplus', state);
+      await tap(tester, 'Sign out');
+      await tap(tester, 'Stay signed in');
+      expect(find.text('Manage membership'), findsOneWidget);
+      await tap(tester, 'Downloaded trips');
+      await tap(tester, 'Choose a trip');
+      expect(find.text('Your next trip starts here'), findsOneWidget);
+    },
+  );
+  testWidgets(
+    'Unsubmitted booking leaves saved dates and notifications alone',
+    (tester) async {
+      final state = DemoState()..signedIn = true;
+      state.trips.add(state.site);
+      final savedDates = state.trip.dates;
+      await open(tester, 'detail', state);
+      await tap(tester, 'Check availability');
+      await tap(tester, 'October 23–25');
+      await tap(tester, 'Use selected dates');
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      expect(state.alerts, isTrue);
+      expect(state.trip.dates, savedDates);
+      await tap(tester, 'Cancel');
+      expect(state.alerts, isTrue);
+      expect(state.trip.dates, savedDates);
+    },
+  );
+  testWidgets(
+    'Guest search handles unmatched destinations and protects Sunset booking',
+    (tester) async {
+      final state = DemoState();
+      await open(tester, 'searchguest', state);
+      await tester.enterText(find.byType(TextFormField), 'Seattle');
+      await tap(tester, 'Show campsites');
+      expect(find.text('No campsites found'), findsOneWidget);
+      await tap(tester, 'Clear search');
+      expect(find.text('Redwood Grove'), findsOneWidget);
+      await tap(tester, 'Santa Cruz, California  ›');
+      await tester.enterText(find.byType(TextFormField), 'Boulder Creek');
+      await tap(tester, 'Show campsites');
+      expect(find.text('Redwood Grove'), findsNothing);
+      await tap(tester, 'Sunset Ridge  ›');
+      await tap(tester, 'Plan a trip here');
+      expect(find.text('Create an account'), findsOneWidget);
+      expect(state.trips, isEmpty);
+    },
+  );
+  for (final screen in campPages) {
+    final route = screen.route;
     testWidgets('Render $route', (tester) async {
       final state = DemoState();
       if (route.startsWith('ridge')) state.site = 'Sunset Ridge';
