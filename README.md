@@ -73,8 +73,9 @@ editable fields and screen width; screenshots document the coded result.
 
 ## Verification and submission
 
-109 passing tests walk signup, booking, sharing, five-tab navigation, filters, profile
-validation, Plus and offline previews. Each route is rendered at 390 × 844 with
+128 passing tests walk signup, booking, sharing, five-tab navigation, filters, profile
+validation, Plus and offline previews. Regression checks cover both campsites
+through Back navigation, sharing, removal and restored browser routes. Each route is rendered at 390 × 844 with
 layout exceptions checked. [Screenshots](docs/screenshots) are actual Flutter
 renders of the coded screens, not Figma exports.
 
@@ -84,8 +85,9 @@ Regenerate screenshots explicitly:
 flutter test --dart-define=SCREENSHOTS=true --update-goldens
 ```
 
-Submit the repository with tag **coded-ui-v1.2**, or the screenshots as permitted
-by the assignment. This repository does not submit anything to Camino.
+Create a new tag for this revision before submitting the repository, or submit
+the screenshots as permitted by the assignment. **coded-ui-v1.2** identifies the
+earlier UI snapshot. This repository does not submit anything to Camino.
 
 ## Code layout
 

@@ -56,7 +56,9 @@ Widget _label(
   FontWeight weight = FontWeight.normal,
   Color color = ink,
 }) {
-  final lineHeight = size >= 26
+  final lineHeight = size == 34
+      ? 40
+      : size >= 26
       ? 32
       : size >= 20
       ? 26

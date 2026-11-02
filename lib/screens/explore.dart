@@ -314,7 +314,6 @@ List<Widget> _ridgereviewBody(PageControls ui) => [
     _label('Review a different range', size: 12, color: muted),
   ], onTap: () => ui.act('Change dates')),
   ui.alertSwitch('Condition-change alerts'),
-  _label(ui.display('On')),
   _button('Request to book · Demo', () => ui.act('Request to book · Demo')),
   _panel([
     _label('Simulate request failure', weight: FontWeight.w500),

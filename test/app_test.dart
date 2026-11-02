@@ -234,6 +234,7 @@ void main() {
     (tester) async {
       final state = DemoState()..signedIn = true;
       state.trips.add(state.site);
+      state.details[state.site] = TripDetails();
       final savedDates = state.trip.dates;
       await open(tester, 'detail', state);
       await tap(tester, 'Check availability');
@@ -282,11 +283,14 @@ void main() {
         'your-offline-copy-is-older',
       ].contains(route)) {
         state.trips.add(state.site);
+        state.details[state.site] = TripDetails();
         state.trip.downloadedDates = route == 'your-offline-copy-is-older'
             ? 'Oct 23–25, 2026'
             : state.trip.dates;
       }
       if (route == 'your-camping-group') {
+        state.trips.add(state.site);
+        state.details[state.site] = TripDetails();
         state.trip.invitation = 'Invitation pending · friend@example.com';
       }
       await open(tester, route, state);

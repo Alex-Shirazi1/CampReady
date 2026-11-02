@@ -23,7 +23,7 @@ class DemoState {
   String destination = '';
   String site = 'Redwood Grove', name = 'John', email = 'john.doe@example.com';
   final details = <String, TripDetails>{};
-  TripDetails get trip => details.putIfAbsent(site, TripDetails.new);
+  TripDetails get trip => details[site] ?? TripDetails();
   final Set<String> trips = {};
   Iterable<String> get downloads =>
       trips.where((site) => details[site]?.downloadedDates.isNotEmpty == true);
@@ -55,8 +55,40 @@ class _CampReadyState extends State<CampReady> {
         GoRoute(
           path: '/${s.route}',
           name: s.route,
-          builder: (_, _) =>
-              DesignScreen(key: ValueKey(s.route), screen: s, demo: demo),
+          redirect: (_, state) {
+            // Named demo previews have no saved-trip context. Real trip
+            // navigation retains it, including restored browser history.
+            if (state.extra is String &&
+                const {
+                  'trip',
+                  'ridgetrip',
+                  'tripconditions',
+                  'tripupdated',
+                  'updatedplan',
+                  'share',
+                  'shared',
+                  'linkcopied',
+                  'remove',
+                  'booking-response',
+                  'your-camping-group',
+                  'you-re-invited',
+                  'you-joined-the-trip',
+                  'downloaded',
+                  'save-for-offline-use',
+                  'ready-for-offline-use',
+                  'your-offline-copy-is-older',
+                }.contains(s.route) &&
+                !demo.trips.contains(state.extra)) {
+              return '/this-trip-is-no-longer-available';
+            }
+            return null;
+          },
+          builder: (_, state) => DesignScreen(
+            key: state.pageKey,
+            screen: s,
+            demo: demo,
+            initialSite: state.extra as String?,
+          ),
         ),
     ],
     errorBuilder: (context, state) => Scaffold(
@@ -93,9 +125,15 @@ class _CampReadyState extends State<CampReady> {
 }
 
 class DesignScreen extends StatefulWidget {
-  const DesignScreen({super.key, required this.screen, required this.demo});
+  const DesignScreen({
+    super.key,
+    required this.screen,
+    required this.demo,
+    this.initialSite,
+  });
   final CampPage screen;
   final DemoState demo;
+  final String? initialSite;
   @override
   State<DesignScreen> createState() => _DesignScreenState();
 }
@@ -107,17 +145,39 @@ class _DesignScreenState extends State<DesignScreen>
   final fields = <String, String>{};
   final form = GlobalKey<FormState>();
   Timer? timer;
+  late String site;
   String? draftDates;
   bool? draftAlerts;
   @override
   bool get ridgeMatch => d.siteType == 'RV' && d.pets == 'Any policy';
   String get route => widget.screen.route;
   DemoState get d => widget.demo;
-  String get tripRoute => d.site == 'Sunset Ridge' ? 'ridgetrip' : 'trip';
-  String get reviewRoute => d.site == 'Sunset Ridge' ? 'ridgereview' : 'review';
+  TripDetails get trip => d.details[site] ?? TripDetails();
+
+  void selectSite(String value) {
+    site = value;
+    d.site = value;
+  }
+
+  String get tripRoute => site == 'Sunset Ridge' ? 'ridgetrip' : 'trip';
+  String get reviewRoute => site == 'Sunset Ridge' ? 'ridgereview' : 'review';
   @override
   void initState() {
     super.initState();
+    site =
+        widget.initialSite ??
+        switch (route) {
+          'ridge' ||
+          'ridgereview' ||
+          'ridgeconfirmed' ||
+          'ridgetrip' => 'Sunset Ridge',
+          'detail' ||
+          'guestdetail' ||
+          'review' ||
+          'confirmed' ||
+          'trip' => 'Redwood Grove',
+          _ => d.site,
+        };
     if (route.startsWith('splash')) {
       splashAnimation = AnimationController(
         vsync: this,
@@ -148,7 +208,7 @@ class _DesignScreenState extends State<DesignScreen>
       target = 'alertsempty';
     }
     if (target == 'explore' && guest) target = 'guest';
-    context.pushNamed(target);
+    context.pushNamed(target, extra: site);
   }
 
   @override
@@ -171,6 +231,28 @@ class _DesignScreenState extends State<DesignScreen>
   void act(String label, [String? destination]) {
     if (label == '‹ Back' || label == 'Back') {
       back();
+      return;
+    }
+    if ([
+          'Send invitation',
+          'Accept invitation',
+          'Decline invitation',
+          'Revoke invitation',
+          'Refresh shared plan',
+          'Edit dates',
+          'Remove trip',
+          'Host accepts',
+          'Host declines',
+          'No response in 24 hours',
+          'Request again',
+          'Download summary',
+          'Refresh download',
+          'Refresh while online',
+          'Complete download',
+          'Delete downloaded copy',
+        ].contains(label) &&
+        !d.trips.contains(site)) {
+      goTo('this-trip-is-no-longer-available');
       return;
     }
     if (label == 'Sign in' || label == 'Create account') {
@@ -201,7 +283,7 @@ class _DesignScreenState extends State<DesignScreen>
         goTo('resetsent');
       }
       if (label == 'Send invitation') {
-        d.trip.invitation =
+        trip.invitation =
             'Invitation pending · ${fields['Invitation email'] ?? 'friend@example.com'}';
         goTo('shared');
       }
@@ -246,13 +328,13 @@ class _DesignScreenState extends State<DesignScreen>
       } else {
         d.editingTrip = false;
         d.bookingAlerts = d.alerts;
-        d.bookingDates = d.trip.dates;
+        d.bookingDates = trip.dates;
         goTo('dates');
       }
       return;
     }
     if (label == 'Trip Conditions' || label == 'View conditions') {
-      goTo(d.site == 'Sunset Ridge' ? 'unknown' : 'conditions');
+      goTo(site == 'Sunset Ridge' ? 'unknown' : 'conditions');
       return;
     }
     if (label == 'Enable trip updates' && guest) {
@@ -261,7 +343,7 @@ class _DesignScreenState extends State<DesignScreen>
     }
     if (label == 'Edit dates') {
       d.editingTrip = true;
-      d.bookingDates = d.trip.dates;
+      d.bookingDates = trip.dates;
       goTo('dates');
       return;
     }
@@ -274,8 +356,8 @@ class _DesignScreenState extends State<DesignScreen>
       return;
     }
     if (label == 'Use selected dates') {
-      d.bookingDates = draftDates ?? d.bookingDates ?? d.trip.dates;
-      if (d.editingTrip) d.trip.dates = d.bookingDates!;
+      d.bookingDates = draftDates ?? d.bookingDates ?? trip.dates;
+      if (d.editingTrip) trip.dates = d.bookingDates!;
       goTo(d.editingTrip ? 'tripupdated' : reviewRoute);
       return;
     }
@@ -285,23 +367,25 @@ class _DesignScreenState extends State<DesignScreen>
       return;
     }
     if (label == 'Request to book · Demo' || label == 'Retry request') {
-      if (d.trips.isNotEmpty && !d.trips.contains(d.site) && !d.plus) {
+      if (d.trips.isNotEmpty && !d.trips.contains(site) && !d.plus) {
         goTo('premium');
         return;
       }
-      d.trips.add(d.site);
+      d.trips.add(site);
+      d.details.putIfAbsent(site, TripDetails.new);
       d.alerts = d.bookingAlerts ?? d.alerts;
       d.bookingAlerts = null;
-      d.trip.dates = d.bookingDates ?? d.trip.dates;
+      trip.dates = d.bookingDates ?? trip.dates;
       d.bookingDates = null;
-      d.trip.status = 'Request pending';
-      goTo(d.site == 'Sunset Ridge' ? 'ridgeconfirmed' : 'confirmed');
+      trip.status = 'Request pending';
+      goTo(site == 'Sunset Ridge' ? 'ridgeconfirmed' : 'confirmed');
       return;
     }
     if (label == 'Remove trip' && route == 'remove') {
-      d.trips.remove(d.site);
-      d.details.remove(d.site);
-      goTo(d.trips.isEmpty ? 'tripsempty' : 'trips');
+      d.trips.remove(site);
+      d.details.remove(site);
+      if (d.trips.isNotEmpty) selectSite(d.trips.first);
+      context.goNamed(d.trips.isEmpty ? 'tripsempty' : 'trips', extra: site);
       return;
     }
     if (label == 'Host accepts' ||
@@ -309,33 +393,33 @@ class _DesignScreenState extends State<DesignScreen>
         label == 'No response in 24 hours' ||
         label == 'Request again') {
       setState(
-        () => d.trip.status = {
+        () => trip.status = {
           'Host accepts': 'Accepted',
           'Host declines': 'Declined',
           'No response in 24 hours': 'Expired',
           'Request again': 'Request pending',
         }[label]!,
       );
-      notice('Demo booking: ${d.trip.status}');
+      notice('Demo booking: ${trip.status}');
       return;
     }
     if (label == 'Accept invitation') {
-      d.trip.invitation = 'Friend joined';
+      trip.invitation = 'Friend joined';
       goTo('you-joined-the-trip');
       return;
     }
     if (label == 'Decline invitation') {
-      d.trip.invitation = 'Invitation declined';
+      trip.invitation = 'Invitation declined';
       goTo('invitation-declined');
       return;
     }
     if (label == 'Revoke invitation') {
-      d.trip.invitation = 'Invitation revoked';
+      trip.invitation = 'Invitation revoked';
       goTo('this-invitation-is-unavailable');
       return;
     }
     if (label == 'Refresh shared plan') {
-      notice('Demo shared plan refreshed: ${d.trip.dates}');
+      notice('Demo shared plan refreshed: ${trip.dates}');
       setState(() {});
       return;
     }
@@ -352,10 +436,10 @@ class _DesignScreenState extends State<DesignScreen>
       return;
     }
     if (label == 'Complete download') {
-      d.trip.downloadedDates = d.trip.dates;
+      trip.downloadedDates = trip.dates;
     }
     if (label == 'Delete downloaded copy') {
-      d.trip.downloadedDates = '';
+      trip.downloadedDates = '';
       goTo(
         d.downloads.isEmpty ? 'no-downloaded-trips' : 'downloaded-summaries',
       );
@@ -396,15 +480,15 @@ class _DesignScreenState extends State<DesignScreen>
     }
     if ((label == 'Redwood Grove' || label == 'Sunset Ridge') &&
         route == 'trips') {
-      d.site = label;
+      selectSite(label);
       goTo(tripRoute);
       return;
     }
     if (label == 'Sunset Ridge') {
-      d.site = 'Sunset Ridge';
+      selectSite('Sunset Ridge');
     }
     if (label == 'Campsite card' || label == 'Redwood Grove') {
-      d.site = 'Redwood Grove';
+      selectSite('Redwood Grove');
     }
     if (label == 'Explore and plan' ||
         label == 'Trips and group sharing' ||
@@ -412,22 +496,23 @@ class _DesignScreenState extends State<DesignScreen>
       d.signedIn = true;
     }
     if (label == 'Trips and group sharing') {
-      d.site = 'Redwood Grove';
-      d.trips.add(d.site);
+      selectSite('Redwood Grove');
+      d.trips.add(site);
+      d.details.putIfAbsent(site, TripDetails.new);
     }
     if (label == 'Open downloaded trip' && d.downloads.isNotEmpty) {
-      if (!d.downloads.contains(d.site)) d.site = d.downloads.first;
+      if (!d.downloads.contains(site)) selectSite(d.downloads.first);
       goTo(
-        d.trip.downloadedDates == d.trip.dates
+        trip.downloadedDates == trip.dates
             ? 'downloaded'
             : 'your-offline-copy-is-older',
       );
       return;
     }
     if (label == 'Save preferences') d.alerts = draftAlerts ?? d.alerts;
-    if (label == 'Redwood: fire restriction') d.site = 'Redwood Grove';
-    if (label == 'Sunset: conditions unconfirmed') d.site = 'Sunset Ridge';
-    if (label == 'View affected trip') d.site = 'Redwood Grove';
+    if (label == 'Redwood: fire restriction') selectSite('Redwood Grove');
+    if (label == 'Sunset: conditions unconfirmed') selectSite('Sunset Ridge');
+    if (label == 'View affected trip') selectSite('Redwood Grove');
     if (label == 'View trips' ||
         label == 'Your trips' ||
         label == 'View all trips') {
@@ -458,9 +543,7 @@ class _DesignScreenState extends State<DesignScreen>
       'Return to owner': tripRoute,
       'Back to my trip': tripRoute,
       'View affected trip': tripRoute,
-      'Trip conditions': d.site == 'Sunset Ridge'
-          ? 'unknown'
-          : 'tripconditions',
+      'Trip conditions': site == 'Sunset Ridge' ? 'unknown' : 'tripconditions',
       'Manage alerts': 'preferences',
       'All updates': 'alerts',
       'Done': route == 'profilesaved'
@@ -536,7 +619,7 @@ class _DesignScreenState extends State<DesignScreen>
       'tripupdated',
       'updatedplan',
     ].contains(route)) {
-      value = value.replaceAll('Redwood Grove', d.site);
+      value = value.replaceAll('Redwood Grove', site);
     }
     if (value == 'On') {
       value =
@@ -558,11 +641,11 @@ class _DesignScreenState extends State<DesignScreen>
       ].contains(route);
       value = value.replaceAll(
         'Oct 23–25, 2026',
-        planning ? draftDates ?? d.bookingDates ?? d.trip.dates : d.trip.dates,
+        planning ? draftDates ?? d.bookingDates ?? trip.dates : trip.dates,
       );
     }
     if (value.startsWith('Request pending')) {
-      value = '${d.trip.status} · Demo';
+      value = '${trip.status} · Demo';
     }
     return value;
   }
@@ -575,13 +658,13 @@ class _DesignScreenState extends State<DesignScreen>
       case 'Notice / Email':
         return d.email;
       case 'Notice / People':
-        return d.trip.invitation;
+        return trip.invitation;
       case 'Notice / Downloaded dates':
-        return d.trip.downloadedDates.isEmpty
+        return trip.downloadedDates.isEmpty
             ? 'No offline copy saved'
-            : d.trip.downloadedDates;
+            : trip.downloadedDates;
       case 'Notice / Booking status':
-        return '${d.trip.status} · Demo';
+        return '${trip.status} · Demo';
       default:
         return display(fallback);
     }
@@ -714,11 +797,11 @@ class _DesignScreenState extends State<DesignScreen>
   @override
   Widget areaMap() => CampsiteMap(
     onRedwood: () {
-      d.site = 'Redwood Grove';
+      selectSite('Redwood Grove');
       goTo('detail');
     },
     onSunset: () {
-      d.site = 'Sunset Ridge';
+      selectSite('Sunset Ridge');
       goTo('ridge');
     },
   );
@@ -856,7 +939,7 @@ class _DesignScreenState extends State<DesignScreen>
                       ListTile(
                         title: const Text('Sunset: conditions unconfirmed'),
                         onTap: () {
-                          d.site = 'Sunset Ridge';
+                          selectSite('Sunset Ridge');
                           goTo('unknown');
                         },
                       ),
@@ -866,11 +949,11 @@ class _DesignScreenState extends State<DesignScreen>
                           child: ListTile(
                             title: Text(site),
                             subtitle: Text(
-                              d.details[site]?.dates ?? d.trip.dates,
+                              d.details[site]?.dates ?? TripDetails().dates,
                             ),
                             trailing: const Icon(Icons.chevron_right),
                             onTap: () {
-                              d.site = site;
+                              selectSite(site);
                               goTo(tripRoute);
                             },
                           ),
@@ -884,9 +967,9 @@ class _DesignScreenState extends State<DesignScreen>
                       for (final site in d.downloads)
                         FilledButton(
                           onPressed: () {
-                            d.site = site;
+                            selectSite(site);
                             goTo(
-                              d.trip.downloadedDates == d.trip.dates
+                              trip.downloadedDates == trip.dates
                                   ? 'downloaded'
                                   : 'your-offline-copy-is-older',
                             );
@@ -909,7 +992,7 @@ class _DesignScreenState extends State<DesignScreen>
                         ],
                       ),
                     if (route == 'booking-response')
-                      Text('Demo booking status: ${d.trip.status}'),
+                      Text('Demo booking status: ${trip.status}'),
                   ],
                 ),
               ),
