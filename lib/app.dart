@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'theme.dart';
 
 import 'screens.dart';
+import 'services/services.dart';
 import 'campsite_map.dart';
 
 /// Session-only sample state. No account, booking, email or charge is sent.
@@ -16,12 +17,51 @@ class TripDetails {
 }
 
 class DemoState {
-  bool signedIn = false, saved = false, plus = false, alerts = true;
+  DemoState({CampReadyServices? services})
+    : services = services ?? CampReadyServices.local();
+
+  /// First Integrations services (Auth / Firestore / FCM). In local
+  /// mode these are backed by an in-memory store; in configured mode
+  /// by Firebase. The UI uses this API either way.
+  final CampReadyServices services;
+
+  /// True when an account is signed in through AuthService. Tests and
+  /// the guide preview can also set it directly; setting it true
+  /// without an account keeps the previous profile fields.
+  bool get signedIn => _signedIn || services.auth.currentUser != null;
+  set signedIn(bool value) {
+    _signedIn = value;
+    if (!value && services.auth.currentUser != null) {
+      unawaited(services.auth.signOut());
+    }
+  }
+
+  bool _signedIn = false;
+  bool plus = false, alerts = true;
   bool editingTrip = false;
   bool? bookingAlerts;
   String? bookingDates;
   String destination = '';
-  String site = 'Redwood Grove', name = 'John', email = 'john.doe@example.com';
+  String site = 'Redwood Grove';
+  // Profile fields. Empty until an account signs in; populated from
+  // AuthService / Firestore, never from a hardcoded sample name.
+  String name = '', email = '';
+  // Campsites saved through FirestoreService (local store in local
+  // mode), keyed by site id. `saved` is the per-site view of this set.
+  final Set<String> savedCampsiteIds = {};
+  bool get saved => savedCampsiteIds.contains(site);
+  set saved(bool value) {
+    if (value) {
+      savedCampsiteIds.add(site);
+    } else {
+      savedCampsiteIds.remove(site);
+    }
+  }
+
+  /// Notification records delivered for this account (MessagingService
+  /// / Firestore), newest first. Empty until a condition changes or an
+  /// invitation arrives; never hardcoded alert panels.
+  final List<AppNotification> notifications = [];
   final details = <String, TripDetails>{};
   TripDetails get trip => details[site] ?? TripDetails();
   final Set<String> trips = {};
@@ -38,15 +78,18 @@ class CampReady extends StatefulWidget {
     super.key,
     this.initialRoute = '/splash',
     this.initialState,
+    this.services,
   });
   final String initialRoute;
   final DemoState? initialState;
+  final CampReadyServices? services;
   @override
   State<CampReady> createState() => _CampReadyState();
 }
 
 class _CampReadyState extends State<CampReady> {
-  late final demo = widget.initialState ?? DemoState();
+  late final demo =
+      widget.initialState ?? DemoState(services: widget.services);
   late final router = GoRouter(
     initialLocation: widget.initialRoute,
     routes: [
@@ -227,6 +270,98 @@ class _DesignScreenState extends State<DesignScreen>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   bool get guest => !d.signedIn;
 
+  // --- First Integrations helpers: persist the session trip / profile
+  // through FirestoreService and deliver condition changes through
+  // MessagingService. All calls are fire-and-forget from the UI and
+  // swallow backend errors so a backend outage never breaks the UI.
+  String get _ownerUid => d.services.auth.currentUser?.uid ?? 'local_guest';
+  String get _ownerEmail =>
+      d.services.auth.currentUser?.email ?? d.email;
+  String _tripIdFor(String siteName) =>
+      'trip_${_ownerUid}_${siteName.replaceAll(' ', '_')}';
+
+  TripRecord _tripRecord(String siteName) {
+    final details = d.details[siteName] ?? TripDetails();
+    return TripRecord(
+      id: _tripIdFor(siteName),
+      ownerUid: _ownerUid,
+      ownerEmail: _ownerEmail,
+      site: siteName,
+      dates: details.dates,
+      status: details.status,
+      alertsEnabled: d.alerts,
+      downloadedDates: details.downloadedDates,
+      sharedWithEmails: [],
+      invitation: details.invitation,
+    );
+  }
+
+  Future<void> _persistTrip(String siteName) async {
+    try {
+      final existing = await d.services.firestore.getTrip(
+        _tripIdFor(siteName),
+      );
+      final record = _tripRecord(siteName).copyWith(
+        sharedWithEmails: existing?.sharedWithEmails ?? [],
+        invitation: existing?.invitation ?? _tripRecord(siteName).invitation,
+      );
+      await d.services.firestore.createTrip(record);
+    } catch (_) {}
+  }
+
+  Future<void> _notifyConditionChange(String title, String body) async {
+    try {
+      final notification = await d.services.messaging.notifyConditionChange(
+        ownerUid: _ownerUid,
+        ownerEmail: _ownerEmail,
+        tripId: _tripIdFor(site),
+        site: site,
+        title: title,
+        body: body,
+      );
+      if (mounted) {
+        setState(() {
+          if (!d.notifications.any((n) => n.id == notification.id)) {
+            d.notifications.insert(0, notification);
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _enableNotifications() async {
+    try {
+      final user = d.services.auth.currentUser;
+      if (user == null) return;
+      final granted = await d.services.messaging.requestPermission();
+      if (granted) await d.services.messaging.getToken(user.uid);
+    } catch (_) {}
+  }
+
+  Future<void> _shareTrip(String inviteEmail) async {
+    try {
+      await _persistTrip(site);
+      await d.services.firestore.shareTrip(
+        tripId: _tripIdFor(site),
+        email: inviteEmail,
+      );
+      await d.services.messaging.notifyTripShared(
+        ownerUid: _ownerUid,
+        ownerEmail: _ownerEmail,
+        inviteeEmail: inviteEmail,
+        tripId: _tripIdFor(site),
+        site: site,
+      );
+    } catch (_) {}
+  }
+
+  void _applyAuthUser(AppUser user) {
+    d.name = user.displayName ?? d.name;
+    d.email = user.email;
+    unawaited(d.services.firestore.saveUserProfile(user));
+    unawaited(_enableNotifications());
+  }
+
   @override
   void act(String label, [String? destination]) {
     if (label == '‹ Back' || label == 'Back') {
@@ -263,10 +398,29 @@ class _DesignScreenState extends State<DesignScreen>
       if (!(form.currentState?.validate() ?? true)) {
         return;
       }
-      d.signedIn = true;
-      d.name = fields['Your name'] ?? d.name;
-      d.email = fields['Email'] ?? d.email;
-      goTo('location');
+      // Real auth: Firebase Auth when configured, the local auth store
+      // otherwise. A failed sign-in lands on the Figma error screen.
+      final email = fields['Email'] ?? d.email;
+      final password = fields['Password'] ?? '';
+      final auth = d.services.auth;
+      final future = label == 'Create account'
+          ? auth.signUp(
+              email: email,
+              password: password,
+              displayName: fields['Your name'],
+            )
+          : auth.signIn(email: email, password: password);
+      future.then((user) {
+        _applyAuthUser(user);
+        if (mounted) {
+          setState(() => d.signedIn = true);
+          goTo('location');
+        }
+      }, onError: (_) {
+        if (mounted) {
+          goTo(label == 'Create account' ? 'signuperror' : 'signinerror');
+        }
+      });
       return;
     }
     if (label == 'Send reset link' ||
@@ -277,19 +431,38 @@ class _DesignScreenState extends State<DesignScreen>
       }
       if (label == 'Save profile') {
         d.name = fields['Display name'] ?? d.name;
+        final user = d.services.auth.currentUser;
+        if (user != null) {
+          unawaited(
+            d.services.auth
+                .updateDisplayName(d.name)
+                .then(
+                  (updated) => updated == null
+                      ? null
+                      : d.services.firestore.saveUserProfile(updated),
+                ),
+          );
+        }
         goTo('profilesaved');
       }
       if (label == 'Send reset link') {
+        final email = fields['Email'] ?? d.email;
+        unawaited(
+          d.services.auth.sendPasswordReset(email).catchError((_) {}),
+        );
         goTo('resetsent');
       }
       if (label == 'Send invitation') {
-        trip.invitation =
-            'Invitation pending · ${fields['Invitation email'] ?? 'friend@example.com'}';
+        final inviteEmail =
+            fields['Invitation email'] ?? 'friend@example.com';
+        trip.invitation = 'Invitation pending · $inviteEmail';
+        unawaited(_shareTrip(inviteEmail));
         goTo('shared');
       }
       return;
     }
     if (label == 'Sign out' && route == 'signout') {
+      unawaited(d.services.auth.signOut());
       d.signedIn = false;
       context.goNamed('welcome');
       return;
@@ -307,12 +480,35 @@ class _DesignScreenState extends State<DesignScreen>
         label == 'Remove Redwood Grove' ||
         label == 'Remove from saved') {
       d.saved = false;
+      final user = d.services.auth.currentUser;
+      if (user != null) {
+        unawaited(
+          d.services.firestore.removeCampsite(user.uid, site).catchError(
+            (_) {},
+          ),
+        );
+      }
     }
     if (label == 'Save campsite') {
       if (guest) {
         goTo('authgate');
       } else {
         d.saved = true;
+        final user = d.services.auth.currentUser;
+        if (user != null) {
+          unawaited(
+            d.services.firestore
+                .saveCampsite(
+                  user.uid,
+                  SavedCampsite(
+                    siteId: site,
+                    name: site,
+                    pricePerNight: r'$65 / night',
+                  ),
+                )
+                .catchError((_) {}),
+          );
+        }
         goTo('detailsaved');
       }
       return;
@@ -357,7 +553,16 @@ class _DesignScreenState extends State<DesignScreen>
     }
     if (label == 'Use selected dates') {
       d.bookingDates = draftDates ?? d.bookingDates ?? trip.dates;
-      if (d.editingTrip) trip.dates = d.bookingDates!;
+      if (d.editingTrip) {
+        trip.dates = d.bookingDates!;
+        unawaited(_persistTrip(site));
+        unawaited(
+          _notifyConditionChange(
+            '$site: dates changed',
+            'Your trip dates are now ${trip.dates}.',
+          ),
+        );
+      }
       goTo(d.editingTrip ? 'tripupdated' : reviewRoute);
       return;
     }
@@ -378,10 +583,16 @@ class _DesignScreenState extends State<DesignScreen>
       trip.dates = d.bookingDates ?? trip.dates;
       d.bookingDates = null;
       trip.status = 'Request pending';
+      // First Integrations: the trip now lives in Firestore (local
+      // store in local mode), so it can be shared and synced.
+      unawaited(_persistTrip(site));
       goTo(site == 'Sunset Ridge' ? 'ridgeconfirmed' : 'confirmed');
       return;
     }
     if (label == 'Remove trip' && route == 'remove') {
+      unawaited(
+        d.services.firestore.deleteTrip(_tripIdFor(site)).catchError((_) {}),
+      );
       d.trips.remove(site);
       d.details.remove(site);
       if (d.trips.isNotEmpty) selectSite(d.trips.first);
@@ -392,13 +603,19 @@ class _DesignScreenState extends State<DesignScreen>
         label == 'Host declines' ||
         label == 'No response in 24 hours' ||
         label == 'Request again') {
-      setState(
-        () => trip.status = {
-          'Host accepts': 'Accepted',
-          'Host declines': 'Declined',
-          'No response in 24 hours': 'Expired',
-          'Request again': 'Request pending',
-        }[label]!,
+      final status = {
+        'Host accepts': 'Accepted',
+        'Host declines': 'Declined',
+        'No response in 24 hours': 'Expired',
+        'Request again': 'Request pending',
+      }[label]!;
+      setState(() => trip.status = status);
+      unawaited(_persistTrip(site));
+      unawaited(
+        _notifyConditionChange(
+          '$site: booking $status',
+          'Your trip request is now $status.',
+        ),
       );
       notice('Demo booking: ${trip.status}');
       return;
@@ -509,7 +726,11 @@ class _DesignScreenState extends State<DesignScreen>
       );
       return;
     }
-    if (label == 'Save preferences') d.alerts = draftAlerts ?? d.alerts;
+    if (label == 'Save preferences') {
+      d.alerts = draftAlerts ?? d.alerts;
+      if (d.trips.contains(site)) unawaited(_persistTrip(site));
+      if (d.alerts) unawaited(_enableNotifications());
+    }
     if (label == 'Redwood: fire restriction') selectSite('Redwood Grove');
     if (label == 'Sunset: conditions unconfirmed') selectSite('Sunset Ridge');
     if (label == 'View affected trip') selectSite('Redwood Grove');
@@ -630,7 +851,10 @@ class _DesignScreenState extends State<DesignScreen>
           : 'Off';
     }
     if (value == 'John') {
-      value = d.name;
+      // Profile screens render the signed-in account's name from
+      // AuthService / Firestore, not a hardcoded sample name.
+      value = d.services.auth.currentUser?.displayName ?? d.name;
+      if (value.isEmpty) value = 'Not signed in';
     }
     if (value.contains('Oct 23–25, 2026')) {
       final planning = [
@@ -654,9 +878,12 @@ class _DesignScreenState extends State<DesignScreen>
   String noticeValue(String name, String fallback) {
     switch (name) {
       case 'Notice / Name':
-        return d.name;
+        final displayName =
+            d.services.auth.currentUser?.displayName ?? d.name;
+        return displayName.isEmpty ? 'Not signed in' : displayName;
       case 'Notice / Email':
-        return d.email;
+        final accountEmail = d.services.auth.currentUser?.email ?? d.email;
+        return accountEmail.isEmpty ? 'Not signed in' : accountEmail;
       case 'Notice / People':
         return trip.invitation;
       case 'Notice / Downloaded dates':
@@ -793,6 +1020,12 @@ class _DesignScreenState extends State<DesignScreen>
 
   @override
   bool get hasRedwoodAlert => d.trips.contains('Redwood Grove');
+
+  @override
+  List<AppNotification> get notifications => d.notifications;
+
+  @override
+  String get backendMode => d.services.mode;
 
   @override
   Widget areaMap() => CampsiteMap(

@@ -298,6 +298,18 @@ List<Widget> _alertsBody(PageControls ui) => [
         color: muted,
       ),
     ], onTap: () => ui.act('Redwood: fire restriction')),
+  // First Integrations: real notification records from
+  // MessagingService / Firestore, not hardcoded panels.
+  for (final notification in ui.notifications)
+    _panel([
+      _label(notification.title, weight: FontWeight.w500),
+      _label(notification.body, size: 12, color: muted),
+    ], onTap: () => ui.act('All updates')),
+  _label(
+    'Delivery: ${ui.backendMode == 'firebase' ? 'Firebase Cloud Messaging' : 'Local mode · in-app only, no Firebase project configured yet'}',
+    size: 12,
+    color: muted,
+  ),
   _button(
     'Notification preferences',
     () => ui.act('Notification preferences', 'preferences'),

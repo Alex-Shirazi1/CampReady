@@ -45,17 +45,30 @@ walkthrough or select any prototype screen.
 ![Welcome](docs/screenshots/welcome.png)
 ![Explore](docs/screenshots/explore.png)
 
+## First Integrations (CSEN 268, due Nov 12, 2026)
+
+Auth, data and messaging are integrated — see
+[docs/FIRST_INTEGRATIONS.md](docs/FIRST_INTEGRATIONS.md). Sign-in /
+sign-up use Firebase Auth when a Firebase project is configured, and
+an on-device local store otherwise; saved campsites, trips and
+sharing use Cloud Firestore (same fallback); condition-change
+notifications use Firebase Cloud Messaging (same fallback, in-app
+delivery). The profile shows the signed-in account from Auth /
+Firestore. No Firebase project is configured yet — the app runs in
+local mode with no keys — so cross-device sync and push delivery
+still need the Firebase Console / `flutterfire configure` steps in
+that doc.
+
 ## Milestone boundaries
 
-All data and services are **simulated**. Bookings, accounts, emails, notification
-permissions, location permissions, payments and downloads do not contact real
-services. No charge is made. Demo state lives in memory and resets on restart;
-offline summaries are session previews, not persistent downloads. The map is
-illustrative. Dates and forecasts are fixed sample scenarios from the design.
+Bookings and payments are **simulated**: no charge is made. Demo
+state lives in memory and resets on restart; offline summaries are
+session previews, not persistent downloads. The map is illustrative.
+Dates and forecasts are fixed sample scenarios from the design.
 
 The one-pager's proposed Plus price is **$2.99/month**. Core browsing, conditions
-and essential alerts stay free. The later integration milestone will connect
-Firebase Auth, Firestore, FCM, device location and live conditions feeds.
+and essential alerts stay free. Device location and live conditions feeds are
+later final-project work, not this milestone.
 
 ## Design sources
 
@@ -73,7 +86,8 @@ editable fields and screen width; screenshots document the coded result.
 
 ## Verification and submission
 
-128 passing tests walk signup, booking, sharing, five-tab navigation, filters, profile
+128 pre-existing tests plus new First Integrations service and wiring tests
+(see `test/first_integrations_test.dart`) walk signup, booking, sharing, five-tab navigation, filters, profile
 validation, Plus and offline previews. Regression checks cover both campsites
 through Back navigation, sharing, removal and restored browser routes. Each route is rendered at 390 × 844 with
 layout exceptions checked. [Screenshots](docs/screenshots) are actual Flutter
@@ -93,6 +107,10 @@ earlier UI snapshot. This repository does not submit anything to Camino.
 
 - `lib/theme.dart`: Material colors, typography and control styles.
 - `lib/app.dart`: named routes, session state, interactive screens and controls.
+- `lib/services/`: First Integrations services — AuthService (Firebase Auth),
+  FirestoreService (Cloud Firestore), MessagingService (FCM), plus an
+  in-memory local fallback used when no Firebase project is configured.
+  `lib/firebase_options.dart` is a documented stub until `flutterfire configure` runs.
 - `lib/screens/` contains the Flutter layouts grouped by feature and the list of named routes.
 - `lib/screens.dart` contains the buttons, cards and text styles shared by those screens.
 - `assets/images`: local design assets; no temporary Figma URLs at runtime.
