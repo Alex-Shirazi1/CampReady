@@ -4,9 +4,8 @@ Know what to expect before you camp.
 
 CSEN 268 · Group 2 · Atishay Jain and Alexander Shirazi
 
-Flutter implementation of the **Coded UI of the App** milestone: screens,
-Material theme, interactive controls, and named routes based on our submitted
-CampReady Figma design.
+Flutter implementation of CampReady, with the submitted Figma screens,
+Material theme, interactive controls, named routes, and Firebase integration.
 
 ## Run
 
@@ -17,8 +16,9 @@ flutter pub get
 flutter run -d chrome
 ```
 
-Run on a connected Android or iOS device with `flutter run`. iOS requires Xcode;
-Android requires the Android SDK. The web build runs without API keys.
+The Firebase configuration currently supports web. Live Android and iOS use
+requires separate platform registration. For an explicit UI-only preview on
+any platform, run with `--dart-define=LOCAL_DEMO=true`.
 
 ```sh
 flutter analyze
@@ -47,17 +47,11 @@ walkthrough or select any prototype screen.
 
 ## First Integrations (CSEN 268, due Nov 12, 2026)
 
-Auth, data and messaging are integrated — see
-[docs/FIRST_INTEGRATIONS.md](docs/FIRST_INTEGRATIONS.md). Sign-in /
-sign-up use Firebase Auth when a Firebase project is configured, and
-an on-device local store otherwise; saved campsites, trips and
-sharing use Cloud Firestore (same fallback); condition-change
-notifications use Firebase Cloud Messaging (same fallback, in-app
-delivery). The profile shows the signed-in account from Auth /
-Firestore. No Firebase project is configured yet — the app runs in
-local mode with no keys — so cross-device sync and push delivery
-still need the Firebase Console / `flutterfire configure` steps in
-that doc.
+See [setup and verification](docs/FIRST_INTEGRATIONS.md). Email/password auth,
+saved campsites, trips, and sharing use Firebase. Data reloads after signing in
+and refreshing tabs. Local demo mode is explicit and labeled.
+
+Web push uses the configured public VAPID key and requires browser permission. In-app sample update records do not themselves send push messages.
 
 ## Milestone boundaries
 
@@ -86,12 +80,11 @@ editable fields and screen width; screenshots document the coded result.
 
 ## Verification and submission
 
-128 pre-existing tests plus new First Integrations service and wiring tests
-(see `test/first_integrations_test.dart`) walk signup, booking, sharing, five-tab navigation, filters, profile
-validation, Plus and offline previews. Regression checks cover both campsites
-through Back navigation, sharing, removal and restored browser routes. Each route is rendered at 390 × 844 with
-layout exceptions checked. [Screenshots](docs/screenshots) are actual Flutter
-renders of the coded screens, not Figma exports.
+Tests cover signup, booking, sharing, navigation, validation, account restoration,
+invitation access, and failure handling. Each of the 100 routes is rendered at
+390 × 844 with layout exceptions checked. Service tests using the local store
+are separate from live Firebase verification. [Screenshots](docs/screenshots)
+show the earlier coded UI snapshot.
 
 Regenerate screenshots explicitly:
 
@@ -99,9 +92,7 @@ Regenerate screenshots explicitly:
 flutter test --dart-define=SCREENSHOTS=true --update-goldens
 ```
 
-Create a new tag for this revision before submitting the repository, or submit
-the screenshots as permitted by the assignment. **coded-ui-v1.2** identifies the
-earlier UI snapshot. This repository does not submit anything to Camino.
+**coded-ui-v1.2** identifies the earlier submitted UI snapshot.
 
 ## Code layout
 
@@ -109,8 +100,8 @@ earlier UI snapshot. This repository does not submit anything to Camino.
 - `lib/app.dart`: named routes, session state, interactive screens and controls.
 - `lib/services/`: First Integrations services — AuthService (Firebase Auth),
   FirestoreService (Cloud Firestore), MessagingService (FCM), plus an
-  in-memory local fallback used when no Firebase project is configured.
-  `lib/firebase_options.dart` is a documented stub until `flutterfire configure` runs.
+  explicit in-memory demo for previews and tests.
+  `lib/firebase_options.dart` contains the web client configuration.
 - `lib/screens/` contains the Flutter layouts grouped by feature and the list of named routes.
 - `lib/screens.dart` contains the buttons, cards and text styles shared by those screens.
 - `assets/images`: local design assets; no temporary Figma URLs at runtime.

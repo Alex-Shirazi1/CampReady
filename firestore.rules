@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    match /users/{uid}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+    match /trips/{tripId} {
+      function owner() { return signedIn() && resource.data.ownerUid == request.auth.uid; }
+      function invited() {
+        return signedIn() && request.auth.token.email in resource.data.get('sharedWithEmails', []);
+      }
+      allow read: if owner() || invited();
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerEmail == request.auth.token.email
+        && request.resource.data.id == tripId;
+      allow update: if owner()
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.ownerEmail == resource.data.ownerEmail
+        && request.resource.data.id == resource.data.id;
+      allow delete: if owner();
+      match /responses/{uid} {
+        function trip() { return get(/databases/$(database)/documents/trips/$(tripId)).data; }
+        function isOwner() { return signedIn() && trip().ownerUid == request.auth.uid; }
+        function isInvitee() {
+          return signedIn() && request.auth.uid == uid
+            && request.auth.token.email in trip().get('sharedWithEmails', []);
+        }
+        allow read: if isOwner() || isInvitee();
+        allow create, update: if isInvitee()
+          && request.resource.data.keys().hasOnly(['email', 'status'])
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.status in ['accepted', 'declined'];
+        allow delete: if isOwner();
+      }
+    }
+  }
+}

@@ -1,20 +1,8 @@
-// Firebase Cloud Messaging for CampReady.
-//
-// Configured mode: FirebaseMessaging — request permission, get the
-// FCM token and save it under users/{uid}/fcmTokens, and listen for
-// foreground messages. A condition change is delivered by writing a
-// notification record to Firestore (see notifyConditionChange) — the
-// server side that sends the FCM push for that record is a Firebase
-// Cloud Function / Cloud Messaging send, to be added with the Firebase
-// project; see docs/FIRST_INTEGRATIONS.md.
-// Local mode: permission is granted in-app, the token is a local
-// identifier saved to the local store, and condition changes are
-// delivered immediately through [onMessage] and the notification
-// record — no push leaves the device.
-
 import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import 'firestore_service.dart';
 import 'local_store.dart';
@@ -43,71 +31,154 @@ class MessagingService {
   final List<AppNotification> _delivered = [];
 
   String? _token;
+  String? _uid;
+  String? get registeredUid => _uid;
+  StreamSubscription<RemoteMessage>? _foreground;
+  StreamSubscription<String>? _registration;
+  String status = 'Push not enabled';
+  static const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
+  static const vapidKey = String.fromEnvironment(
+    'FCM_VAPID_KEY',
+    defaultValue: 'BGeSQTWeHDPAyNrhJJOFCnQ7-Bc0Kq2fqh_nWJmQ6DnfSkXo6Q3nPixmgJ2QyhjIWhWm6h_c3ePZiTHE5oEhzfE',
+  );
 
   Future<void> initialize() async {
-    if (!useFirebase) return;
-    try {
-      FirebaseMessaging.onMessage.listen((message) {
-        final notification = AppNotification(
-          id: message.messageId ?? _store.nextId('fcm'),
-          title: message.notification?.title ?? 'Trip update',
-          body: message.notification?.body ?? '',
-          tripId: message.data['tripId'],
-          site: message.data['site'],
-          createdAt: DateTime.now(),
-        );
-        _delivered.insert(0, notification);
-        if (!_controller.isClosed) _controller.add(notification);
-      });
-    } catch (_) {
-      // Messaging must never break app start; local delivery remains.
+    if (!useFirebase || emulator) return;
+    _foreground ??= FirebaseMessaging.onMessage.listen((message) {
+      if (_uid == null || FirebaseAuth.instance.currentUser?.uid != _uid) {
+        return;
+      }
+      final notification = AppNotification(
+        id: message.messageId ?? _store.nextId('fcm'),
+        title: message.notification?.title ?? 'Trip update',
+        body: message.notification?.body ?? '',
+        tripId: message.data['tripId'] as String?,
+        site: message.data['site'] as String?,
+        createdAt: DateTime.now(),
+      );
+      if (_delivered.any((n) => n.id == notification.id)) return;
+      _delivered.insert(0, notification);
+      if (!_controller.isClosed) _controller.add(notification);
+      unawaited(
+        _firestore.addNotification(_uid!, notification).catchError((
+          Object error,
+        ) {
+          status = 'Message received; saving it failed';
+          return notification;
+        }),
+      );
+    });
+  }
+
+  Future<void> restoreRegistration(String uid) async {
+    if (!useFirebase || emulator || (kIsWeb && vapidKey.isEmpty)) return;
+    if (!await FirebaseMessaging.instance.isSupported()) return;
+    final settings = await FirebaseMessaging.instance.getNotificationSettings();
+    if (settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional) {
+      await getToken(uid);
     }
   }
 
   Future<bool> requestPermission() async {
-    if (!useFirebase) return true;
-    try {
-      final settings = await FirebaseMessaging.instance.requestPermission();
-      return settings.authorizationStatus ==
-          AuthorizationStatus.authorized ||
-          settings.authorizationStatus == AuthorizationStatus.provisional;
-    } catch (_) {
+    if (emulator) {
+      status = 'Push cannot be tested in the Firebase emulators';
       return false;
+    }
+    if (!useFirebase) return true;
+    if (kIsWeb && vapidKey.isEmpty) {
+      status = 'Web push needs the project VAPID key';
+      return false;
+    }
+    if (!await FirebaseMessaging.instance.isSupported()) {
+      status = 'Push is not supported by this browser';
+      return false;
+    }
+    final settings = await FirebaseMessaging.instance.requestPermission();
+    final granted =
+        settings.authorizationStatus == AuthorizationStatus.authorized ||
+        settings.authorizationStatus == AuthorizationStatus.provisional;
+    status = granted
+        ? 'Permission granted; registration pending'
+        : 'Push permission denied';
+    return granted;
+  }
+
+  Future<String?> getToken(String uid) async {
+    if (emulator) return null;
+    if (useFirebase && FirebaseAuth.instance.currentUser?.uid != uid) {
+      return null;
+    }
+    _uid = uid;
+    if (!useFirebase) {
+      _token = 'local-token-$uid';
+      await saveToken(uid, _token!);
+      status = 'Local demo only';
+      return _token;
+    }
+    if (kIsWeb && vapidKey.isEmpty) {
+      status = 'Web push needs the project VAPID key';
+      return null;
+    }
+    await _registration?.cancel();
+    final registered = Completer<String>();
+    _registration = FirebaseMessaging.instance.onRegistered.listen(
+      (token) async {
+        if (_uid != uid) return;
+        try {
+          await saveToken(uid, token);
+          if (_uid != uid) return;
+          _token = token;
+          status = 'Push registration saved';
+          if (!registered.isCompleted) registered.complete(token);
+        } catch (error) {
+          status = 'Push registration could not be saved';
+          if (!registered.isCompleted) registered.completeError(error);
+        }
+      },
+      onError: (Object error) {
+        if (!registered.isCompleted) registered.completeError(error);
+      },
+    );
+    try {
+      final result = await Future.wait([
+        FirebaseMessaging.instance.register(
+          vapidKey: kIsWeb ? vapidKey : null,
+          serviceWorkerScriptPath: kIsWeb ? 'firebase-messaging-sw.js' : null,
+        ),
+        registered.future,
+      ]).timeout(const Duration(seconds: 15));
+      return result.last as String;
+    } catch (_) {
+      await _registration?.cancel();
+      _registration = null;
+      status = 'Push registration failed; retry';
+      return null;
     }
   }
 
-  /// The messaging registration for this device when configured
-  /// (firebase_messaging 17: `register()` + `onRegistered` yield the
-  /// Firebase Installation ID used as the direct-send target);
-  /// a local identifier otherwise. Returns null only if registration
-  /// fails in configured mode.
-  Future<String?> getToken(String uid) async {
-    if (useFirebase) {
-      try {
-        final registered = FirebaseMessaging.instance.onRegistered.first;
-        await FirebaseMessaging.instance.register();
-        _token = await registered.timeout(const Duration(seconds: 10));
-        if (_token != null) await saveToken(uid, _token!);
-        return _token;
-      } catch (_) {
-        return null;
+  Future<void> detachUser() async {
+    final uid = _uid;
+    final token = _token;
+    final registration = _registration;
+    _registration = null;
+    _uid = null;
+    _token = null;
+    _delivered.clear();
+    status = 'Push not enabled';
+    await registration?.cancel();
+    if (uid != null && token != null) {
+      if (useFirebase && !emulator) {
+        await FirebaseMessaging.instance.unregister();
       }
+      await _firestore.removeFcmToken(uid, token);
     }
-    _token ??= 'local-token-$uid';
-    await saveToken(uid, _token!);
-    return _token;
   }
 
   Future<void> saveToken(String uid, String token) async {
     await _firestore.saveFcmToken(uid, token);
   }
 
-  /// Records a condition change for a trip and delivers it: writes an
-  /// AppNotification for the owner (and for every invited email whose
-  /// account exists locally / in Firestore), emits it on [onMessage],
-  /// and keeps it in [delivered] so the Alerts screen can show it.
-  /// The FCM push itself is sent by the backend for that record once
-  /// a Firebase project with Cloud Messaging is configured.
   Future<AppNotification> notifyConditionChange({
     required String ownerUid,
     required String ownerEmail,

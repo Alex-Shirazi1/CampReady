@@ -3,7 +3,7 @@
 // Configured mode: Firebase Auth (email/password), exactly as taught
 // in the CSEN 268 "Email Authentication" deck — sign-up, sign-in,
 // forgot-password, and an auth-state stream.
-// Local mode (no Firebase project configured): the same API backed by
+// Explicit local demo mode: the same API backed by
 // LocalStore, labelled local mode in the UI. Local accounts live only
 // on this device and are never synced.
 

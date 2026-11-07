@@ -168,7 +168,9 @@ List<Widget> _shareBody(PageControls ui) => [
 List<Widget> _sharedHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('Invitation sent', size: 26, weight: FontWeight.bold),
-  _label('Select the link to copy it.'),
+  _label(
+    'The invited account can find this trip after signing in. No email is sent.',
+  ),
 ];
 
 List<Widget> _sharedBody(PageControls ui) => [
@@ -243,25 +245,48 @@ List<Widget> _tripsemptyBody(PageControls ui) => [
 List<Widget> _savedHeader(PageControls ui) => [
   _label('CAMPREADY', size: 12, color: forest),
   _label('Places worth returning to', size: 26, weight: FontWeight.bold),
-  _label('1 saved campsite', color: muted),
+  _label(
+    '${ui.savedSites.length} saved ${ui.savedSites.length == 1 ? 'campsite' : 'campsites'}',
+    color: muted,
+  ),
 ];
 
 List<Widget> _savedBody(PageControls ui) => [
-  _campsiteCard('assets/images/a1bf3d0137c87172.png', [
-    _label('SANTA CRUZ · 45 MI', size: 12, color: muted),
-    _label(ui.display('Redwood Grove'), size: 20, weight: FontWeight.bold),
-    _label('Tent sites · Pets welcome', size: 12, color: muted),
-    _label(
-      '72° / 52°  ·  Fire restriction',
-      weight: FontWeight.w500,
-      color: const Color(0xFF8A5100),
+  for (final site in ui.savedSites) ...[
+    _campsiteCard(
+      site == 'Sunset Ridge'
+          ? 'assets/images/5b5ffeae6b8241ad.png'
+          : 'assets/images/a1bf3d0137c87172.png',
+      [
+        _label(
+          site == 'Sunset Ridge' ? 'BOULDER CREEK' : 'SANTA CRUZ · 45 MI',
+          size: 12,
+          color: muted,
+        ),
+        _label(site, size: 20, weight: FontWeight.bold),
+        _label(
+          site == 'Sunset Ridge'
+              ? 'RV-friendly spaces'
+              : 'Tent sites · Pets welcome',
+          size: 12,
+          color: muted,
+        ),
+        _label(
+          site == 'Sunset Ridge'
+              ? 'Conditions unavailable'
+              : '72° / 52°  ·  Fire restriction',
+          weight: FontWeight.w500,
+          color: const Color(0xFF8A5100),
+        ),
+        _label(
+          site == 'Sunset Ridge' ? '\$55 / night' : '\$65 / night',
+          weight: FontWeight.w500,
+        ),
+      ],
+      () => ui.act('Open saved: $site'),
     ),
-    _label('\$65 / night', weight: FontWeight.w500),
-  ], () => ui.act('Campsite card', 'detail')),
-  _button(
-    'Remove Redwood Grove',
-    () => ui.act('Remove Redwood Grove', 'savedempty'),
-  ),
+    _button('Remove $site', () => ui.act('Remove saved: $site')),
+  ],
 ];
 
 List<Widget> _savedemptyHeader(PageControls ui) => [
@@ -306,7 +331,9 @@ List<Widget> _alertsBody(PageControls ui) => [
       _label(notification.body, size: 12, color: muted),
     ], onTap: () => ui.act('All updates')),
   _label(
-    'Delivery: ${ui.backendMode == 'firebase' ? 'Firebase Cloud Messaging' : 'Local mode · in-app only, no Firebase project configured yet'}',
+    ui.backendMode == 'firebase'
+        ? 'Saved trip updates · push requires notification permission and registration'
+        : 'Local demo · in-app only',
     size: 12,
     color: muted,
   ),

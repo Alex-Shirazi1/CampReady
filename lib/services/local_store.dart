@@ -1,4 +1,4 @@
-// In-memory backend used when no Firebase project is configured.
+// In-memory backend for explicit local previews and tests.
 // Same collections and shapes as the Firestore implementation, so
 // switching backends changes storage, not behaviour. Nothing here
 // leaves the device and nothing is synced.
@@ -34,8 +34,10 @@ class LocalStore {
 
   final Map<String, _LocalAccount> _usersByEmail = {};
   final Map<String, AppUser> _profiles = {};
+  final Map<String, bool> alertPreferences = {};
   final Map<String, Map<String, SavedCampsite>> _saved = {};
   final Map<String, TripRecord> _trips = {};
+  final Map<String, Map<String, Map<String, String>>> responses = {};
   final Map<String, List<AppNotification>> _notifications = {};
   final Map<String, Set<String>> _tokens = {};
   final Set<String> _resetRequests = {};
@@ -135,9 +137,9 @@ class LocalStore {
         .where(
           (t) =>
               t.ownerUid == uid ||
-              t.sharedWithEmails.map((e) => e.toLowerCase()).contains(
-                normalized,
-              ),
+              t.sharedWithEmails
+                  .map((e) => e.toLowerCase())
+                  .contains(normalized),
         )
         .toList();
   }
@@ -162,6 +164,8 @@ class LocalStore {
   void saveToken(String uid, String token) {
     _tokens.putIfAbsent(uid, () => {}).add(token);
   }
+
+  void removeToken(String uid, String token) => _tokens[uid]?.remove(token);
 
   Set<String> tokens(String uid) => Set.of(_tokens[uid] ?? {});
 }

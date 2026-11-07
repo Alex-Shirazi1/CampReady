@@ -2,12 +2,59 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 import 'services/services.dart';
+import 'theme.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Tries Firebase and falls back to local mode (in-memory auth /
-  // Firestore / messaging) when no Firebase project is configured.
-  // Never throws: the app must run on web with no keys.
-  final services = await CampReadyServices.initialize();
-  runApp(CampReady(services: services));
+  runApp(const CampReadyStartup());
+}
+
+class CampReadyStartup extends StatefulWidget {
+  const CampReadyStartup({super.key});
+
+  @override
+  State<CampReadyStartup> createState() => _CampReadyStartupState();
+}
+
+class _CampReadyStartupState extends State<CampReadyStartup> {
+  late Future<CampReadyServices> services = initialize();
+
+  Future<CampReadyServices> initialize() async {
+    const demo = bool.fromEnvironment('LOCAL_DEMO');
+    return demo ? CampReadyServices.local() : CampReadyServices.initialize();
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<CampReadyServices>(
+    future: services,
+    builder: (context, snapshot) {
+      if (snapshot.hasData) return CampReady(services: snapshot.data!);
+      return MaterialApp(
+        initialRoute: '/',
+        theme: campTheme(),
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: snapshot.hasError
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'CampReady could not connect to Firebase. Check your connection and platform configuration.',
+                        ),
+                        FilledButton(
+                          onPressed: () =>
+                              setState(() => services = initialize()),
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                    )
+                  : const CircularProgressIndicator(),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }

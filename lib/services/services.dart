@@ -3,6 +3,9 @@
 // configured mode the same services talk to Firebase Auth, Cloud
 // Firestore and Firebase Cloud Messaging.
 
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'auth_service.dart';
 import 'backend.dart';
 import 'firestore_service.dart';
@@ -39,12 +42,18 @@ class CampReadyServices {
     );
   }
 
-  /// Tries Firebase first; falls back to local mode on any failure
-  /// (no configuration, no network, missing native config). Never
-  /// throws, so app start never depends on Firebase being ready.
   static Future<CampReadyServices> initialize() async {
     final configured = await FirebaseBackend.initialize();
-    if (!configured) return CampReadyServices.local();
+    if (!configured) {
+      throw StateError(
+        'Firebase could not initialize. Check platform configuration and connectivity.',
+      );
+    }
+    const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
+    if (emulator) {
+      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
+      FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+    }
     final store = LocalStore();
     final firestore = FirestoreService(store: store, useFirebase: true);
     final services = CampReadyServices._(
