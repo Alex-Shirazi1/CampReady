@@ -156,8 +156,11 @@ class FirestoreService {
 
   Future<TripRecord> createTrip(TripRecord trip) async {
     // Create-only: a second-device / reloaded create must not silently
-    // overwrite an existing trip and wipe its shares. The rules enforce
-    // this with !exists() on create, so the write itself is the check.
+    // overwrite an existing trip and wipe its shares. set() on an
+    // existing doc is checked by the UPDATE rule, not the create rule,
+    // so this write carries a new server-timestamp createdAt and the
+    // rules keep createdAt immutable: a second create is denied, and
+    // the write itself is the check.
     // Do NOT read the doc first to test for existence: the trip read
     // rule dereferences resource.data, which is null for a doc that
     // does not exist yet, so a pre-flight get is denied (403) for every
@@ -169,7 +172,7 @@ class FirestoreService {
         await _db
             .collection('trips')
             .doc(trip.id)
-            .set(trip.toMap())
+            .set({...trip.toMap(), 'createdAt': FieldValue.serverTimestamp()})
             .timeout(timeout);
       } on FirebaseException catch (e) {
         if (e.code == 'permission-denied') {
@@ -464,6 +467,7 @@ class FirestoreService {
         .toList();
     final resolvedEmail = email ?? await _emailFor(uid);
     if (resolvedEmail == null) return _sorted(own);
+    final me = resolvedEmail.trim().toLowerCase();
     final visible = await tripsForUser(uid, resolvedEmail);
     final merged = <String, AppNotification>{};
     for (final note in own) {
@@ -480,6 +484,10 @@ class FirestoreService {
       try {
         for (final note in await _tripNotifications(trip.id)) {
           if (merged.containsKey(note.id)) continue;
+          // An invitation notice is addressed to one invitee; others on
+          // the same trip must not see it as their own invitation.
+          final recipient = note.recipientEmail;
+          if (recipient != null && recipient != me) continue;
           merged[note.id] =
               readIds.contains(note.id) ? note.copyWith(read: true) : note;
         }

@@ -189,6 +189,7 @@ class AppNotification {
     required this.body,
     this.tripId,
     this.site,
+    this.recipientEmail,
     this.read = false,
     this.createdAt,
   });
@@ -198,6 +199,10 @@ class AppNotification {
   final String body;
   final String? tripId;
   final String? site;
+
+  /// Set on a trip notification meant for one invitee (the invitation
+  /// notice); null means everyone who can read the trip.
+  final String? recipientEmail;
   final bool read;
 
   /// Null in local mode when no timestamp was supplied; Firestore
@@ -210,6 +215,7 @@ class AppNotification {
     body: body,
     tripId: tripId,
     site: site,
+    recipientEmail: recipientEmail,
     read: read ?? this.read,
     createdAt: createdAt,
   );
@@ -220,6 +226,7 @@ class AppNotification {
     'body': body,
     'tripId': tripId,
     'site': site,
+    if (recipientEmail != null) 'recipientEmail': recipientEmail,
     'read': read,
     'createdAt': createdAt?.toIso8601String(),
   };
@@ -231,6 +238,9 @@ class AppNotification {
         body: map['body'] as String? ?? '',
         tripId: map['tripId'] as String?,
         site: map['site'] as String?,
+        recipientEmail: (map['recipientEmail'] as String?)
+            ?.trim()
+            .toLowerCase(),
         read: map['read'] as bool? ?? false,
         createdAt: parseStoredDateTime(map['createdAt']),
       );

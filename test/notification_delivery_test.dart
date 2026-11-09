@@ -405,4 +405,143 @@ void main() {
       );
     });
   });
+
+  group('Per-user delivery (local mode)', () {
+    Future<void> tap(WidgetTester tester, String label) async {
+      final finder = find.text(label);
+      if (finder.evaluate().isEmpty) {
+        await tester.scrollUntilVisible(
+          finder,
+          220,
+          scrollable: find.byType(Scrollable).last,
+        );
+      }
+      await tester.ensureVisible(finder.last);
+      await tester.pumpAndSettle();
+      await tester.tap(finder.last);
+      await tester.pumpAndSettle();
+    }
+
+    test('an invitation notice reaches only the invited email', () async {
+      final (services, owner, first, trip) = await _sharedTrip();
+      final second = await services.auth.signUp(
+        email: 'second@example.com',
+        password: 'campready123',
+        displayName: 'Second',
+      );
+      await services.firestore.shareTrip(tripId: trip.id, email: second.email);
+      for (final email in [first.email, second.email]) {
+        await services.messaging.notifyTripShared(
+          ownerUid: owner.uid,
+          ownerEmail: owner.email,
+          inviteeEmail: email,
+          tripId: trip.id,
+          site: 'Redwood Grove',
+        );
+      }
+      // A notice written before recipientEmail existed (the live data)
+      // is still shown to everyone on the trip.
+      await services.firestore.addTripNotification(
+        trip.id,
+        AppNotification(
+          id: 'legacy-invite',
+          title: 'You were invited to Redwood Grove',
+          body: 'legacy',
+          tripId: trip.id,
+        ),
+      );
+      for (final invitee in [first, second]) {
+        final invites = (await services.firestore.notifications(
+          invitee.uid,
+          email: invitee.email,
+        )).where((n) => n.title == 'You were invited to Redwood Grove');
+        expect(
+          invites.where((n) => n.id != 'legacy-invite'),
+          hasLength(1),
+          reason: '${invitee.email} sees only its own invitation',
+        );
+        expect(
+          invites.where((n) => n.id != 'legacy-invite').single.recipientEmail,
+          invitee.email,
+        );
+        expect(invites.map((n) => n.id), contains('legacy-invite'));
+      }
+    });
+
+    test('sharing does not put the invitee notice in the owner stream', () async {
+      final (services, owner, invitee, trip) = await _sharedTrip();
+      final received = <AppNotification>[];
+      final sub = services.messaging.onMessage.listen(received.add);
+      await services.messaging.notifyTripShared(
+        ownerUid: owner.uid,
+        ownerEmail: owner.email,
+        inviteeEmail: invitee.email,
+        tripId: trip.id,
+        site: 'Redwood Grove',
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(received, isEmpty);
+      expect(services.messaging.delivered, isEmpty);
+      await sub.cancel();
+    });
+
+    test('a declined invitee stops seeing the trip notifications', () async {
+      final (services, owner, invitee, trip) = await _sharedTrip();
+      await services.firestore.respondToInvitation(trip, invitee, 'declined');
+      await services.messaging.notifyConditionChange(
+        ownerUid: owner.uid,
+        ownerEmail: owner.email,
+        tripId: trip.id,
+        site: 'Redwood Grove',
+        title: 'Redwood Grove: dates changed',
+        body: 'Your trip dates are now Oct 30–Nov 1, 2026.',
+        sharedWithEmails: [invitee.email],
+      );
+      await services.auth.signIn(email: invitee.email, password: 'campready123');
+      final state = DemoState(services: services);
+      await state.loadAccount();
+      expect(state.trips, isNot(contains('Redwood Grove')));
+      expect(
+        state.notifications.map((n) => n.title),
+        isNot(contains('Redwood Grove: dates changed')),
+      );
+    });
+
+    testWidgets('owner alerts off still notifies invitees, not the owner', (
+      tester,
+    ) async {
+      final (services, owner, invitee, _) = await _sharedTrip();
+      // The owner's saved preference (loadAccount reloads it on start).
+      await services.firestore.saveAlertPreference(owner.uid, false);
+      final state = DemoState(services: services);
+      await state.loadAccount();
+      expect(state.alerts, isFalse);
+      await tester.pumpWidget(
+        CampReady(initialState: state, initialRoute: '/dates'),
+      );
+      await tester.pumpAndSettle();
+      state.editingTrip = true;
+      await tap(tester, 'October 30–November 1');
+      await tap(tester, 'Use selected dates');
+      expect(state.details['Redwood Grove']?.dates, 'Oct 30–Nov 1, 2026');
+      expect(
+        (await services.firestore.notifications(
+          invitee.uid,
+          email: invitee.email,
+        )).map((n) => n.title),
+        contains('Redwood Grove: dates changed'),
+      );
+      expect(
+        (await services.firestore.notifications(
+          owner.uid,
+          email: owner.email,
+        )).map((n) => n.title),
+        isNot(contains('Redwood Grove: dates changed')),
+      );
+      expect(
+        state.notifications.map((n) => n.title),
+        isNot(contains('Redwood Grove: dates changed')),
+      );
+    });
+  });
 }

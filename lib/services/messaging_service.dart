@@ -248,6 +248,10 @@ class MessagingService {
   /// caller still declares the recipients; delivery itself is by trip
   /// membership, so a stale or partial list cannot silently drop an
   /// invitee who is on the trip.
+  ///
+  /// [notifyOwner] is the owner's own alert preference. It covers only
+  /// the owner's copy: invitees still get the trip-scoped copy, and
+  /// each invitee's own preference decides whether they see alerts.
   Future<AppNotification> notifyConditionChange({
     required String ownerUid,
     required String ownerEmail,
@@ -256,6 +260,7 @@ class MessagingService {
     required String title,
     required String body,
     List<String> sharedWithEmails = const [],
+    bool notifyOwner = true,
   }) async {
     final notification = AppNotification(
       id: _store.nextId('notif'),
@@ -265,17 +270,24 @@ class MessagingService {
       site: site,
       createdAt: DateTime.now(),
     );
-    await _firestore.addNotification(ownerUid, notification);
+    if (notifyOwner) {
+      await _firestore.addNotification(ownerUid, notification);
+    }
     await _firestore.addTripNotification(tripId, notification);
-    _delivered.insert(0, notification);
-    if (!_controller.isClosed) _controller.add(notification);
+    if (notifyOwner) {
+      _delivered.insert(0, notification);
+      if (!_controller.isClosed) _controller.add(notification);
+    }
     return notification;
   }
 
   /// Notifies the invitee that they were added to a trip. One
   /// trip-scoped write (see [notifyConditionChange]): the invitee
   /// reads it from the trip, with no uid lookup and no cross-user
-  /// write. The owner gets no copy — it is their own trip.
+  /// write. It is addressed to [inviteeEmail], so other invitees on
+  /// the same trip do not see it as their own invitation. The owner
+  /// gets no copy, not even in this session's in-app stream: it is
+  /// their own trip, and the notice is written to the invitee.
   Future<AppNotification> notifyTripShared({
     required String ownerUid,
     required String ownerEmail,
@@ -289,11 +301,10 @@ class MessagingService {
       body: '$ownerEmail invited you to a CampReady trip.',
       tripId: tripId,
       site: site,
+      recipientEmail: inviteeEmail.trim().toLowerCase(),
       createdAt: DateTime.now(),
     );
     await _firestore.addTripNotification(tripId, notification);
-    _delivered.insert(0, notification);
-    if (!_controller.isClosed) _controller.add(notification);
     return notification;
   }
 }

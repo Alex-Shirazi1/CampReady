@@ -12,16 +12,18 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
-// Background messages on web: show the notification. Without this
-// handler a data-only message has no display at all, and a
-// notification-payload message only gets the browser default.
+// Background messages on web. A message with a `notification` payload
+// (for example a Firebase Console test message) is already shown by the
+// Firebase SDK before this handler runs, so showing it here as well
+// would display it twice. Only a data-only message, which has no display
+// at all otherwise, gets a notification built here.
 messaging.onBackgroundMessage((payload) => {
-  const title = (payload.notification && payload.notification.title) || 'Trip update';
-  const options = {
-    body: (payload.notification && payload.notification.body) || '',
-    data: payload.data || {},
-  };
-  return self.registration.showNotification(title, options);
+  if (payload.notification) return;
+  const data = payload.data || {};
+  return self.registration.showNotification(data.title || 'Trip update', {
+    body: data.body || '',
+    data,
+  });
 });
 
 // Tapping a background notification focuses the open app tab, or

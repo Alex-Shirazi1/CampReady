@@ -11,16 +11,25 @@ service cloud.firestore {
         return signedIn() && request.auth.token.email in resource.data.get('sharedWithEmails', []);
       }
       allow read: if owner() || invited();
-      // Create-only: !exists() stops a second-device / reloaded create
-      // from overwriting an existing trip and wiping its shares.
+      // Trip ids are trip_<ownerUid>_<site>; binding the id to the
+      // creator's uid stops another account from pre-creating (squatting)
+      // someone else's trip id and blocking their booking.
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerEmail == request.auth.token.email
         && request.resource.data.id == tripId
+        && tripId.matches('trip_' + request.auth.uid + '_.+')
         && !exists(/databases/$(database)/documents/trips/$(tripId));
+      // Create-only: set() on an existing doc is evaluated as an UPDATE,
+      // so !exists() above never sees a second createTrip. createTrip
+      // writes a server-timestamp createdAt and createdAt is immutable
+      // here, so a second create is denied instead of overwriting the
+      // trip and wiping its shares. Field updates (dates, share, revoke)
+      // never touch createdAt.
       allow update: if owner()
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.ownerEmail == resource.data.ownerEmail
-        && request.resource.data.id == resource.data.id;
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null);
       allow delete: if owner();
       // Trip notifications: one write per trip event, readable by the
       // owner and by invitees. This is the invitee-delivery channel:

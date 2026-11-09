@@ -41,11 +41,15 @@ Collections: `users/{uid}` for profiles, with `savedCampsites`, `notifications`,
 firebase deploy --only firestore:rules --project campready-group2
 ```
 
-(`.firebaserc` sets `campready-group2` as the default project.) Updating the local file alone does not publish future changes. Until the rules in the console match this file, live trip create can still fail: the rules that were live before this revision denied every create.
+(`.firebaserc` sets `campready-group2` as the default project.) Updating the local file alone does not publish future changes.
+
+Trip creation is create-only. A `set()` on an existing trip is checked by the update rule, not the create rule, so `!exists()` on create cannot catch a second create. Instead `createTrip` writes a server-timestamp `createdAt` and the update rule keeps `createdAt` immutable, so a second create is denied rather than overwriting the trip and wiping its shares. Trip ids must start with `trip_<creator uid>_`, so another account cannot pre-create someone else's trip id. Until the rules in the console match this file, a second create can still overwrite an existing trip.
 
 ## Notification delivery
 
 A trip event is written **once** to `trips/{tripId}/notifications/{id}`. The trip owner and everyone in the trip's `sharedWithEmails` can read it, so delivery needs no per-invitee account lookup and no write into another account's `users/{uid}` subtree (which the users rule denies). The owner's own copy also goes to their own `users/{uid}/notifications` list. That is why sharing with an email that has not signed up yet still delivers: the invitee reads the trip notification when they sign in and load the trip.
+
+Delivery is per user. An invitation notice carries `recipientEmail`, so only the invited account sees it, not the other invitees on the same trip. The owner's alert preference controls only the owner's own copy; invitees are still notified. An invitee who declined no longer sees the trip or its notifications.
 
 Read state is per-user: marking a shared trip notification read writes a marker to the reader's own `users/{uid}/notificationReads/{id}`, never to the shared record.
 
@@ -53,7 +57,7 @@ Read state is per-user: marking a shared trip notification read writes a marker 
 
 The project’s public Web Push certificate key is configured in the app. For another Firebase project, supply its public key with `FCM_VAPID_KEY`. The key is client configuration, not a server credential. The VAPID key's ownership against this project's Web Push certificate has **not** been verified in the Firebase console — compare it there before submission; a wrong key fails registration at runtime and no local test catches it.
 
-Push registration runs on sign-in (restoring an already-granted registration) and from Save Preferences (which requests permission — a user gesture). The app listens for foreground messages (`onMessage`), routes tapped background messages to their trip (`onMessageOpenedApp`), refreshes tokens (`onRegistered` — the firebase_messaging 17 replacement for the deprecated `onTokenRefresh` — old token removed), and the web service worker shows background notifications (`onBackgroundMessage` in `web/firebase-messaging-sw.js`, plus a tap-to-focus handler). The mobile background handler in `lib/main.dart` is registered off-web; the project is web-only, so it has no native Firebase config to initialise with yet.
+Push registration runs on sign-in (restoring an already-granted registration) and from Save Preferences (which requests permission — a user gesture). The app listens for foreground messages (`onMessage`) and refreshes tokens (`onRegistered` — the firebase_messaging 17 replacement for the deprecated `onTokenRefresh` — old token removed). In the background, the Firebase SDK in `web/firebase-messaging-sw.js` shows messages that carry a `notification` payload, such as a Console test message. The worker's `onBackgroundMessage` builds a notification only for data-only messages, so nothing is shown twice. Tapping a notification the worker built focuses or opens the app; a notification the SDK showed opens its `fcm_options.link` when the message sets one. `onMessageOpenedApp` (open the tapped trip) is wired but fires on mobile only, because FlutterFire's web plugin never emits it. `web/flutter_bootstrap.js` starts Flutter without the deprecated Flutter service worker. The default bootstrap would replace and unregister the FCM worker at `/` on the next page load, which drops the push subscription. The mobile background handler in `lib/main.dart` is registered off-web; the project is web-only, so it has no native Firebase config to initialise with yet.
 
 Permission denial, missing setup, and registration failures are reported separately from saving notification preferences. Signing out detaches the device registration from the account.
 

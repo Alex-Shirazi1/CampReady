@@ -84,6 +84,7 @@ class DemoState {
     );
     final savedAlerts = await services.firestore.alertPreference(user.uid);
     final visibleTrips = <TripRecord>[];
+    final declinedTripIds = <String>{};
     for (final record in loadedTrips) {
       if (record.ownerUid != user.uid) {
         // A denied invitation-response read must not hide the trip
@@ -97,7 +98,10 @@ class DemoState {
         } catch (_) {
           response = null;
         }
-        if (response?['status'] == 'declined') continue;
+        if (response?['status'] == 'declined') {
+          declinedTripIds.add(record.id);
+          continue;
+        }
         visibleTrips.add(
           record.copyWith(
             invitation: response?['status'] == 'accepted'
@@ -160,7 +164,10 @@ class DemoState {
     alerts = savedAlerts;
     notifications
       ..clear()
-      ..addAll(notes);
+      // A declined invitation hides the trip, so it hides that trip's
+      // notifications too (the invitee is still on sharedWithEmails, so
+      // the trip-notification read itself is still allowed).
+      ..addAll(notes.where((n) => !declinedTripIds.contains(n.tripId)));
     notifications.sort(
       (a, b) => (b.createdAt ?? DateTime(1970)).compareTo(
         a.createdAt ?? DateTime(1970),
@@ -522,7 +529,9 @@ class _DesignScreenState extends State<DesignScreen>
   }
 
   Future<void> _notifyConditionChange(String title, String body) async {
-    if (!d.alerts) return;
+    // The owner's alert preference covers only the owner's own copy.
+    // Invitees are notified through the trip either way; each one's own
+    // preference decides whether their Alerts tab shows it.
     try {
       final note = await d.services.messaging.notifyConditionChange(
         ownerUid: _ownerUid,
@@ -534,8 +543,9 @@ class _DesignScreenState extends State<DesignScreen>
         // The recipients: without this the service can only notify
         // the owner, even though delivery itself is trip-scoped.
         sharedWithEmails: d.records[site]?.sharedWithEmails ?? const [],
+        notifyOwner: d.alerts,
       );
-      if (!d.notifications.any((n) => n.id == note.id)) {
+      if (d.alerts && !d.notifications.any((n) => n.id == note.id)) {
         d.notifications.insert(0, note);
       }
       d.changed();
