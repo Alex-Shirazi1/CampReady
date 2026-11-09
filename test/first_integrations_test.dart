@@ -207,6 +207,22 @@ void main() {
       expect(token, startsWith('local-token-'));
       expect(services.store.tokens(owner.uid), contains(token));
 
+      // The notification is about a real shared trip: invitee delivery
+      // is trip-scoped, so the trip must exist and be shared first.
+      await services.firestore.createTrip(
+        TripRecord(
+          id: 'trip_2',
+          ownerUid: owner.uid,
+          ownerEmail: owner.email,
+          site: 'Sunset Ridge',
+          dates: 'Oct 23–25, 2026',
+        ),
+      );
+      await services.firestore.shareTrip(
+        tripId: 'trip_2',
+        email: 'friend2@example.com',
+      );
+
       final received = <AppNotification>[];
       final sub = services.messaging.onMessage.listen(received.add);
       final notification = await services.messaging.notifyConditionChange(

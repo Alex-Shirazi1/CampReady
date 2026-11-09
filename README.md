@@ -9,7 +9,7 @@ Material theme, interactive controls, named routes, and Firebase integration.
 
 ## Run
 
-Requires Flutter 3.47.5 / Dart 3.13.4 or a compatible newer stable SDK.
+Requires Flutter 3.47.7 / Dart 3.13.5 or a compatible newer stable SDK.
 
 ```sh
 flutter pub get

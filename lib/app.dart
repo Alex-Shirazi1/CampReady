@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
@@ -77,15 +78,25 @@ class DemoState {
       user.uid,
       user.email,
     );
-    final notes = await services.firestore.notifications(user.uid);
+    final notes = await services.firestore.notifications(
+      user.uid,
+      email: user.email,
+    );
     final savedAlerts = await services.firestore.alertPreference(user.uid);
     final visibleTrips = <TripRecord>[];
     for (final record in loadedTrips) {
       if (record.ownerUid != user.uid) {
-        final response = await services.firestore.invitationResponse(
-          record.id,
-          user.uid,
-        );
+        // A denied invitation-response read must not hide the trip
+        // itself; the invitee can still see it and respond.
+        Map<String, String>? response;
+        try {
+          response = await services.firestore.invitationResponse(
+            record.id,
+            user.uid,
+          );
+        } catch (_) {
+          response = null;
+        }
         if (response?['status'] == 'declined') continue;
         visibleTrips.add(
           record.copyWith(
@@ -95,9 +106,14 @@ class DemoState {
           ),
         );
       } else {
-        final responses = await services.firestore.invitationResponses(
-          record.id,
-        );
+        List<Map<String, String>> responses;
+        try {
+          responses = await services.firestore.invitationResponses(
+            record.id,
+          );
+        } catch (_) {
+          responses = const [];
+        }
         final current = responses.where(
           (r) => record.sharedWithEmails.contains(r['email']),
         );
@@ -261,6 +277,7 @@ class _CampReadyState extends State<CampReady> {
   );
   StreamSubscription<AppUser?>? authSubscription;
   StreamSubscription<AppNotification>? messageSubscription;
+  StreamSubscription<RemoteMessage>? openedMessageSubscription;
 
   @override
   void initState() {
@@ -290,6 +307,18 @@ class _CampReadyState extends State<CampReady> {
         demo.changed();
       }
     });
+    // A tapped background notification opens its trip, when the trip
+    // is one this account can see.
+    openedMessageSubscription = demo.services.messaging.onMessageOpened
+        .listen((message) {
+          final siteName = message.data['site'] as String?;
+          if (siteName == null || !demo.trips.contains(siteName)) return;
+          demo.site = siteName;
+          router.goNamed(
+            siteName == 'Sunset Ridge' ? 'ridgetrip' : 'trip',
+            extra: siteName,
+          );
+        });
     if (demo.services.auth.currentUser != null) restoreAccount();
   }
 
@@ -318,6 +347,7 @@ class _CampReadyState extends State<CampReady> {
   void dispose() {
     authSubscription?.cancel();
     messageSubscription?.cancel();
+    openedMessageSubscription?.cancel();
     router.dispose();
     super.dispose();
   }
@@ -501,6 +531,9 @@ class _DesignScreenState extends State<DesignScreen>
         site: site,
         title: title,
         body: body,
+        // The recipients: without this the service can only notify
+        // the owner, even though delivery itself is trip-scoped.
+        sharedWithEmails: d.records[site]?.sharedWithEmails ?? const [],
       );
       if (!d.notifications.any((n) => n.id == note.id)) {
         d.notifications.insert(0, note);
@@ -535,11 +568,57 @@ class _DesignScreenState extends State<DesignScreen>
     );
     d.records[site] = updated;
     trip.invitation = updated.invitation;
+    // The invitation notification: the invitee learns about the share
+    // from the trip, not from a cross-user write (see MessagingService).
+    // A notification failure must not undo the share itself.
+    try {
+      await d.services.messaging.notifyTripShared(
+        ownerUid: _ownerUid,
+        ownerEmail: _ownerEmail,
+        inviteeEmail: inviteEmail,
+        tripId: _tripIdFor(site),
+        site: site,
+      );
+    } catch (_) {
+      if (mounted) {
+        notice(
+          'Trip shared, but the invitation notification could not be saved.',
+        );
+      }
+    }
   }
 
   Future<void> _applyAuthUser(AppUser user) async {
-    await d.loadAccount();
-    await d.services.firestore.saveUserProfile(user);
+    // A profile/load failure after a successful sign-in must not look
+    // like a failed sign-in: the account is signed in, so report the
+    // specific failure and keep going instead of throwing.
+    try {
+      await d.loadAccount();
+    } catch (_) {
+      d.syncError =
+          'Signed in, but your saved data could not be loaded. Retry from your profile.';
+      d.changed();
+    }
+    try {
+      await d.services.firestore.saveUserProfile(user);
+    } catch (_) {
+      d.syncError =
+          'Signed in, but your profile could not be saved to Firestore. Your trips are still available; retry from your profile.';
+      d.changed();
+    }
+    // Re-register for push on sign-in when alerts are on and permission
+    // was already granted. First-time permission is still requested
+    // from Save Preferences (a user gesture); this path never prompts.
+    if (d.alerts) {
+      unawaited(
+        d.services.messaging.restoreRegistration(user.uid).catchError((
+          Object error,
+        ) {
+          d.services.messaging.status =
+              'Push registration could not be restored';
+        }),
+      );
+    }
   }
 
   Future<void> _runAction(String label, String? destination) async {

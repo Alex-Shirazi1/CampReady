@@ -327,7 +327,7 @@ List<Widget> _aboutBody(PageControls ui) => [
     color: muted,
   ),
   _label(
-    'Course prototype · CSEN 268\nGroup 2 · Atishay Jain & Alexander Shirazi\n\nAll campsite conditions, fees and alerts shown here are sample data. Bookings and payments are simulated; accounts, saved campsites, trips and notifications use Firebase Auth / Firestore / FCM when a Firebase project is configured, and an on-device local store otherwise.',
+    'Course prototype · CSEN 268\nGroup 2 · Atishay Jain & Alexander Shirazi\n\nAll campsite conditions, fees and alerts shown here are sample data. Bookings and payments are simulated; accounts, saved campsites, trips and notifications use Firebase Auth / Firestore / FCM (campready-group2). Pass --dart-define=LOCAL_DEMO=true for an explicit on-device local preview instead.',
     color: muted,
   ),
   _button('Back to Profile', () => ui.act('Back to Profile')),

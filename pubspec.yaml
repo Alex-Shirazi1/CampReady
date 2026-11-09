@@ -9,7 +9,8 @@ dependencies:
     sdk: flutter
   go_router: ^18.1.2
   # First Integrations (CSEN 268): Firebase Auth, Firestore, FCM.
-  # The app runs in local mode when no Firebase project is configured;
+  # Firebase is configured for web (campready-group2). Pass
+  # --dart-define=LOCAL_DEMO=true for an explicit local preview;
   # see lib/firebase_options.dart and docs/FIRST_INTEGRATIONS.md.
   firebase_core: ^5.0.0
   firebase_auth: ^7.0.0

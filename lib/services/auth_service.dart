@@ -170,7 +170,11 @@ class AuthService {
     final name = displayName.trim();
     if (name.isEmpty) return user;
     if (useFirebase) {
-      await fb.FirebaseAuth.instance.currentUser?.updateDisplayName(name);
+      final fbUser = fb.FirebaseAuth.instance.currentUser;
+      await fbUser?.updateDisplayName(name);
+      // reload() so the name read back below is the saved one, not the
+      // stale pre-update value.
+      await fbUser?.reload();
       final updated = currentUser;
       _emit(updated);
       return updated;

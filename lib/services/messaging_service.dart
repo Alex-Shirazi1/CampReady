@@ -20,10 +20,15 @@ class MessagingService {
   final bool useFirebase;
 
   final _controller = StreamController<AppNotification>.broadcast();
+  final _openedController = StreamController<RemoteMessage>.broadcast();
 
   /// Notifications delivered while the app is open: FCM foreground
   /// messages when configured, local condition changes otherwise.
   Stream<AppNotification> get onMessage => _controller.stream;
+
+  /// FCM messages the user tapped while the app was in the
+  /// background. The app routes these to the tapped trip.
+  Stream<RemoteMessage> get onMessageOpened => _openedController.stream;
 
   /// Notifications delivered in this session (local mode, and any
   /// FCM foreground message received in configured mode).
@@ -34,11 +39,16 @@ class MessagingService {
   String? _uid;
   String? get registeredUid => _uid;
   StreamSubscription<RemoteMessage>? _foreground;
+  StreamSubscription<RemoteMessage>? _opened;
+  StreamSubscription<String>? _tokenRefresh;
   StreamSubscription<String>? _registration;
   String status = 'Push not enabled';
   static const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
   static const vapidKey = String.fromEnvironment(
     'FCM_VAPID_KEY',
+    // Public Web Push certificate key for campready-group2 — a public
+    // client configuration value, not a secret. Override per project
+    // with --dart-define=FCM_VAPID_KEY=… (see docs/FIRST_INTEGRATIONS).
     defaultValue: 'BGeSQTWeHDPAyNrhJJOFCnQ7-Bc0Kq2fqh_nWJmQ6DnfSkXo6Q3nPixmgJ2QyhjIWhWm6h_c3ePZiTHE5oEhzfE',
   );
 
@@ -68,6 +78,49 @@ class MessagingService {
         }),
       );
     });
+    _opened ??= FirebaseMessaging.onMessageOpenedApp.listen(
+      handleOpenedMessage,
+    );
+    // Token refresh: firebase_messaging 17 deprecated onTokenRefresh;
+    // onRegistered emits the token whenever registration changes,
+    // including a refresh. When a new token arrives for the signed-in
+    // account, save it and remove the old one.
+    _tokenRefresh ??= FirebaseMessaging.instance.onRegistered.listen((
+      newToken,
+    ) async {
+      final uid = _uid;
+      if (uid == null || newToken == _token) return;
+      final old = _token;
+      _token = newToken;
+      try {
+        await saveToken(uid, newToken);
+        if (old != null) {
+          await _firestore.removeFcmToken(uid, old);
+        }
+        status = 'Push registration saved';
+      } catch (_) {
+        status = 'Push registration could not be saved';
+      }
+    });
+  }
+
+  /// Handles a tapped background notification: records it like a
+  /// foreground message and emits the raw message so the app can
+  /// route to its trip. Kept separate from the listener so tests can
+  /// drive it with a constructed [RemoteMessage].
+  void handleOpenedMessage(RemoteMessage message) {
+    final notification = AppNotification(
+      id: message.messageId ?? _store.nextId('fcm-opened'),
+      title: message.notification?.title ?? 'Trip update',
+      body: message.notification?.body ?? '',
+      tripId: message.data['tripId'] as String?,
+      site: message.data['site'] as String?,
+      createdAt: DateTime.now(),
+    );
+    if (_delivered.any((n) => n.id == notification.id)) return;
+    _delivered.insert(0, notification);
+    if (!_controller.isClosed) _controller.add(notification);
+    if (!_openedController.isClosed) _openedController.add(message);
   }
 
   Future<void> restoreRegistration(String uid) async {
@@ -179,6 +232,22 @@ class MessagingService {
     await _firestore.saveFcmToken(uid, token);
   }
 
+  /// Delivers a condition-change notification to the owner and to
+  /// every invitee, in both modes, with one write per destination:
+  ///
+  /// * the owner's own copy goes to their own notifications list;
+  /// * one trip-scoped copy goes to `trips/{tripId}/notifications`,
+  ///   which the owner and every invitee can read.
+  ///
+  /// The old implementation looked each invitee up in the local
+  /// in-memory store (`_store.findUser`), which is empty in Firebase
+  /// mode, and then wrote into the invitee's `users/{uid}` subtree,
+  /// which the rules deny. Trip-scoped delivery needs neither a uid
+  /// lookup nor a cross-user write, and it reaches invitees who sign
+  /// up after being shared with. [sharedWithEmails] is kept so the
+  /// caller still declares the recipients; delivery itself is by trip
+  /// membership, so a stale or partial list cannot silently drop an
+  /// invitee who is on the trip.
   Future<AppNotification> notifyConditionChange({
     required String ownerUid,
     required String ownerEmail,
@@ -197,18 +266,16 @@ class MessagingService {
       createdAt: DateTime.now(),
     );
     await _firestore.addNotification(ownerUid, notification);
-    for (final email in sharedWithEmails) {
-      final invitee = _store.findUser(email);
-      if (invitee != null && invitee.uid != ownerUid) {
-        await _firestore.addNotification(invitee.uid, notification);
-      }
-    }
+    await _firestore.addTripNotification(tripId, notification);
     _delivered.insert(0, notification);
     if (!_controller.isClosed) _controller.add(notification);
     return notification;
   }
 
-  /// Notifies the invitee that they were added to a trip.
+  /// Notifies the invitee that they were added to a trip. One
+  /// trip-scoped write (see [notifyConditionChange]): the invitee
+  /// reads it from the trip, with no uid lookup and no cross-user
+  /// write. The owner gets no copy — it is their own trip.
   Future<AppNotification> notifyTripShared({
     required String ownerUid,
     required String ownerEmail,
@@ -224,10 +291,7 @@ class MessagingService {
       site: site,
       createdAt: DateTime.now(),
     );
-    final invitee = _store.findUser(inviteeEmail);
-    if (invitee != null) {
-      await _firestore.addNotification(invitee.uid, notification);
-    }
+    await _firestore.addTripNotification(tripId, notification);
     _delivered.insert(0, notification);
     if (!_controller.isClosed) _controller.add(notification);
     return notification;

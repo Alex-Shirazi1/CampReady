@@ -155,15 +155,56 @@ class FirestoreService {
   // --- trips ---
 
   Future<TripRecord> createTrip(TripRecord trip) async {
+    // Create-only: a second-device / reloaded create must not silently
+    // overwrite an existing trip and wipe its shares. The rules enforce
+    // this with !exists() on create, so the write itself is the check.
+    // Do NOT read the doc first to test for existence: the trip read
+    // rule dereferences resource.data, which is null for a doc that
+    // does not exist yet, so a pre-flight get is denied (403) for every
+    // brand-new trip and booking can never succeed. If the write is
+    // denied, only then read the doc — a doc that exists is readable
+    // by its owner, so a successful read there means "already exists".
     if (useFirebase) {
-      await _db
-          .collection('trips')
-          .doc(trip.id)
-          .set(trip.toMap())
-          .timeout(timeout);
-      return trip;
+      try {
+        await _db
+            .collection('trips')
+            .doc(trip.id)
+            .set(trip.toMap())
+            .timeout(timeout);
+      } on FirebaseException catch (e) {
+        if (e.code == 'permission-denied') {
+          final exists = await _docExists(trip.id);
+          if (exists) {
+            throw StateError(
+              'This trip already exists. Refresh to load the saved plan instead of creating a new one.',
+            );
+          }
+        }
+        rethrow;
+      }
+      return TripRecord.fromMap(trip.toMap());
+    }
+    if (_store.trip(trip.id) != null) {
+      throw StateError(
+        'This trip already exists. Refresh to load the saved plan instead of creating a new one.',
+      );
     }
     return _store.putTrip(trip);
+  }
+
+  /// True when the trip doc exists and is readable by the signed-in
+  /// account. False when it does not exist or cannot be read.
+  Future<bool> _docExists(String tripId) async {
+    try {
+      final doc = await _db
+          .collection('trips')
+          .doc(tripId)
+          .get()
+          .timeout(timeout);
+      return doc.exists;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> updateTrip(TripRecord trip) async {
@@ -361,6 +402,19 @@ class FirestoreService {
   }
 
   // --- notifications ---
+  //
+  // Delivery model (fixed in this revision): a trip event is written
+  // ONCE to `trips/{tripId}/notifications/{id}`. The owner and every
+  // invitee can read that subcollection, so delivery needs no
+  // per-invitee uid lookup and no cross-user write into another
+  // account's `users/{uid}` subtree (which the users rule denies).
+  // The owner's own copy still goes to their own list, and FCM
+  // foreground saves also go there. [notifications] merges both
+  // sources for the signed-in account, newest first, de-duplicated
+  // by id. A trip notification is included for invitees only — the
+  // owner already has their own copy, so including it again would
+  // double-count (and would show the owner an "invited" notice about
+  // their own trip).
 
   Future<AppNotification> addNotification(
     String uid,
@@ -379,7 +433,64 @@ class FirestoreService {
     return _store.addNotification(uid, notification);
   }
 
-  Future<List<AppNotification>> notifications(String uid) async {
+  /// Writes one trip notification, readable by the trip owner and by
+  /// everyone in the trip's `sharedWithEmails`. The caller must have
+  /// persisted the trip first; the rules deny the write when the trip
+  /// does not exist or the writer is not its owner.
+  Future<AppNotification> addTripNotification(
+    String tripId,
+    AppNotification notification,
+  ) async {
+    if (useFirebase) {
+      await _db
+          .collection('trips')
+          .doc(tripId)
+          .collection('notifications')
+          .doc(notification.id)
+          .set(notification.toMap())
+          .timeout(timeout);
+      return notification;
+    }
+    return _store.addTripNotification(tripId, notification);
+  }
+
+  Future<List<AppNotification>> notifications(
+    String uid, {
+    String? email,
+  }) async {
+    final readIds = await _readMarkerIds(uid);
+    final own = (await _ownNotifications(uid))
+        .map((n) => readIds.contains(n.id) ? n.copyWith(read: true) : n)
+        .toList();
+    final resolvedEmail = email ?? await _emailFor(uid);
+    if (resolvedEmail == null) return _sorted(own);
+    final visible = await tripsForUser(uid, resolvedEmail);
+    final merged = <String, AppNotification>{};
+    for (final note in own) {
+      merged[note.id] = note;
+    }
+    for (final trip in visible) {
+      // The owner's own copy already covers their trips; trip
+      // notifications are the invitees' delivery channel.
+      if (trip.ownerUid == uid) continue;
+      // A denied or missing trip-notifications read (e.g. stale
+      // rules without the subcollection) must not fail the whole
+      // load: the trip itself is still visible, only its
+      // notifications are missing.
+      try {
+        for (final note in await _tripNotifications(trip.id)) {
+          if (merged.containsKey(note.id)) continue;
+          merged[note.id] =
+              readIds.contains(note.id) ? note.copyWith(read: true) : note;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return _sorted(merged.values.toList());
+  }
+
+  Future<List<AppNotification>> _ownNotifications(String uid) async {
     if (useFirebase) {
       final snap = await _db
           .collection('users')
@@ -387,12 +498,96 @@ class FirestoreService {
           .collection('notifications')
           .get()
           .timeout(timeout);
-      return snap.docs.map((d) => AppNotification.fromMap(d.data())).toList();
+      return _parseNotifications(snap.docs.map((d) => d.data()));
     }
     return _store.notifications(uid);
   }
 
+  Future<List<AppNotification>> _tripNotifications(String tripId) async {
+    if (useFirebase) {
+      final snap = await _db
+          .collection('trips')
+          .doc(tripId)
+          .collection('notifications')
+          .get()
+          .timeout(timeout);
+      return _parseNotifications(snap.docs.map((d) => d.data()));
+    }
+    return _store.tripNotifications(tripId);
+  }
+
+  /// Ids the user has marked read (per-user markers — see
+  /// [markNotificationRead]). Applied to both the own list and to
+  /// shared trip notifications when merging.
+  Future<Set<String>> _readMarkerIds(String uid) async {
+    if (useFirebase) {
+      try {
+        final snap = await _db
+            .collection('users')
+            .doc(uid)
+            .collection('notificationReads')
+            .get()
+            .timeout(timeout);
+        return {
+          for (final doc in snap.docs)
+            if (doc.data()['read'] as bool? ?? false) doc.id,
+        };
+      } catch (_) {
+        return {};
+      }
+    }
+    return _store.readNotificationIds(uid);
+  }
+
+  /// Resolves the email for [uid] so visible trips can be found.
+  /// Returns null when it cannot be resolved (for example, reading
+  /// another account's profile in Firebase mode is denied by the
+  /// users rule); callers then return the user's own list only.
+  Future<String?> _emailFor(String uid) async {
+    if (useFirebase) {
+      try {
+        final profile = await getUserProfile(uid);
+        if (profile != null && profile.email.isNotEmpty) {
+          return profile.email;
+        }
+      } catch (_) {
+        // Another account's profile: not readable, and not needed for
+        // the signed-in account's own list.
+      }
+      return null;
+    }
+    return _store.profile(uid)?.email;
+  }
+
+  /// Parses notification docs one by one so a single malformed doc
+  /// cannot fail the whole list read.
+  List<AppNotification> _parseNotifications(
+    Iterable<Map<String, dynamic>> docs,
+  ) {
+    final out = <AppNotification>[];
+    for (final data in docs) {
+      try {
+        out.add(AppNotification.fromMap(data));
+      } catch (_) {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  List<AppNotification> _sorted(List<AppNotification> notes) {
+    notes.sort(
+      (a, b) => (b.createdAt ?? DateTime(1970)).compareTo(
+        a.createdAt ?? DateTime(1970),
+      ),
+    );
+    return notes;
+  }
+
   Stream<List<AppNotification>> watchNotifications(String uid) {
+    // Live snapshots cover the user's own list only. Trip
+    // notifications arrive on the next loadAccount refresh; the UI
+    // loads notifications that way (DemoState.loadAccount).
     if (useFirebase) {
       return _db
           .collection('users')
@@ -400,9 +595,8 @@ class FirestoreService {
           .collection('notifications')
           .snapshots()
           .map(
-            (snap) => snap.docs
-                .map((d) => AppNotification.fromMap(d.data()))
-                .toList(),
+            (snap) =>
+                _sorted(_parseNotifications(snap.docs.map((d) => d.data()))),
           );
     }
     return Stream.value(_store.notifications(uid));
@@ -410,12 +604,17 @@ class FirestoreService {
 
   Future<void> markNotificationRead(String uid, String id) async {
     if (useFirebase) {
+      // set(merge) instead of update: it must not throw when the doc
+      // does not exist in the user's own list (a shared trip
+      // notification lives under the trip, not here). The read marker
+      // is per-user, so marking one invitee's copy read does not mark
+      // it read for everyone else.
       await _db
           .collection('users')
           .doc(uid)
-          .collection('notifications')
+          .collection('notificationReads')
           .doc(id)
-          .update({'read': true})
+          .set({'read': true}, SetOptions(merge: true))
           .timeout(timeout);
       return;
     }

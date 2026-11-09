@@ -3,6 +3,37 @@
 // Firestore implementation and by the local in-memory fallback, so
 // the UI never branches on which backend is active.
 
+/// Lowercases+trims emails, dropping empties and duplicates (first
+/// occurrence wins). Email identity in this app is case-insensitive;
+/// Firestore `arrayContains` and the trip read rule are not.
+List<String> normalizeEmails(Iterable<String> emails) {
+  final seen = <String>{};
+  final out = <String>[];
+  for (final raw in emails) {
+    final email = raw.trim().toLowerCase();
+    if (email.isEmpty || !seen.add(email)) continue;
+    out.add(email);
+  }
+  return out;
+}
+
+/// Parses a stored timestamp that may be an ISO-8601 string (what
+/// [AppNotification.toMap] writes), a [DateTime], or a Firestore
+/// `Timestamp` (what a console-written doc may carry). Returns null
+/// instead of throwing on an unexpected shape, so one malformed doc
+/// does not fail a whole list read.
+DateTime? parseStoredDateTime(Object? value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value);
+  try {
+    final dynamic timestamp = value;
+    return timestamp.toDate() as DateTime?;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// A signed-in account. [uid] is the Firebase UID when configured,
 /// or a `local_…` id in local mode.
 class AppUser {
@@ -24,13 +55,16 @@ class AppUser {
 
   Map<String, dynamic> toMap() => {
     'uid': uid,
-    'email': email,
+    // Emails are stored lowercased+trimmed everywhere: the Firestore
+    // shared-trip query (arrayContains) and the read rule are both
+    // case-sensitive, so a mixed-case stored email would hide a trip.
+    'email': email.trim().toLowerCase(),
     'displayName': displayName,
   };
 
   factory AppUser.fromMap(Map<String, dynamic> map) => AppUser(
     uid: map['uid'] as String? ?? '',
-    email: map['email'] as String? ?? '',
+    email: (map['email'] as String? ?? '').trim().toLowerCase(),
     displayName: map['displayName'] as String?,
   );
 }
@@ -112,36 +146,42 @@ class TripRecord {
   Map<String, dynamic> toMap() => {
     'id': id,
     'ownerUid': ownerUid,
-    'ownerEmail': ownerEmail,
+    // Normalised at the model boundary (see fromMap): the create rule
+    // requires ownerEmail == the auth token email, and the shared query
+    // is case-sensitive, so stored emails must be lowercased+trimmed.
+    'ownerEmail': ownerEmail.trim().toLowerCase(),
     'site': site,
     'dates': dates,
     'status': status,
     'alertsEnabled': alertsEnabled,
     'downloadedDates': downloadedDates,
-    'sharedWithEmails': sharedWithEmails,
+    'sharedWithEmails': normalizeEmails(sharedWithEmails),
     'invitation': invitation,
   };
 
   factory TripRecord.fromMap(Map<String, dynamic> map) => TripRecord(
     id: map['id'] as String? ?? '',
     ownerUid: map['ownerUid'] as String? ?? '',
-    ownerEmail: map['ownerEmail'] as String? ?? '',
+    ownerEmail: (map['ownerEmail'] as String? ?? '').trim().toLowerCase(),
     site: map['site'] as String? ?? '',
     dates: map['dates'] as String? ?? '',
     status: map['status'] as String? ?? 'Request pending',
     alertsEnabled: map['alertsEnabled'] as bool? ?? true,
     downloadedDates: map['downloadedDates'] as String? ?? '',
-    sharedWithEmails: (map['sharedWithEmails'] as List?)
-        ?.map((e) => e.toString())
-        .toList() ??
-        const [],
+    sharedWithEmails: normalizeEmails(
+      (map['sharedWithEmails'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
+    ),
     invitation: map['invitation'] as String? ?? 'No invitations yet',
   );
 }
 
-/// One condition-change / invitation notification. Stored at
-/// `users/{uid}/notifications/{id}` in Firestore, and delivered
-/// in-app (via FCM when configured, via the local stream otherwise).
+/// One condition-change / invitation notification. A trip notification
+/// is stored once at `trips/{tripId}/notifications/{id}` in Firestore
+/// (readable by the owner and by invitees) and the owner's own copy
+/// at `users/{uid}/notifications/{id}`; FCM foreground saves also go
+/// to the signed-in user's own list. Delivered in-app (via FCM when
+/// configured, via the local stream otherwise).
 class AppNotification {
   const AppNotification({
     required this.id,
@@ -192,6 +232,6 @@ class AppNotification {
         tripId: map['tripId'] as String?,
         site: map['site'] as String?,
         read: map['read'] as bool? ?? false,
-        createdAt: DateTime.tryParse(map['createdAt'] as String? ?? ''),
+        createdAt: parseStoredDateTime(map['createdAt']),
       );
 }

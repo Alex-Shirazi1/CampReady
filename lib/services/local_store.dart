@@ -39,6 +39,12 @@ class LocalStore {
   final Map<String, TripRecord> _trips = {};
   final Map<String, Map<String, Map<String, String>>> responses = {};
   final Map<String, List<AppNotification>> _notifications = {};
+  // Trip-scoped notifications, one write per trip event, read by the
+  // owner and by invitees (see FirestoreService.addTripNotification).
+  final Map<String, List<AppNotification>> _tripNotifications = {};
+  // Per-user read markers for trip notifications: a trip notification
+  // is shared, so "read" cannot live on the shared record itself.
+  final Map<String, Set<String>> _notificationReads = {};
   final Map<String, Set<String>> _tokens = {};
   final Set<String> _resetRequests = {};
   int _counter = 0;
@@ -123,8 +129,12 @@ class LocalStore {
   // --- trips ---
 
   TripRecord putTrip(TripRecord trip) {
-    _trips[trip.id] = trip;
-    return trip;
+    // Round-trip through the model boundary so stored trips are
+    // normalised (lowercased emails) even though local mode never
+    // serialises to Firestore.
+    final normalized = TripRecord.fromMap(trip.toMap());
+    _trips[normalized.id] = normalized;
+    return normalized;
   }
 
   TripRecord? trip(String id) => _trips[id];
@@ -154,11 +164,34 @@ class LocalStore {
   List<AppNotification> notifications(String uid) =>
       List.of(_notifications[uid] ?? []);
 
+  /// Trip notifications for one trip, newest first.
+  List<AppNotification> tripNotifications(String tripId) =>
+      List.of(_tripNotifications[tripId] ?? []);
+
+  AppNotification addTripNotification(
+    String tripId,
+    AppNotification notification,
+  ) {
+    _tripNotifications.putIfAbsent(tripId, () => []).insert(0, notification);
+    return notification;
+  }
+
+  bool isNotificationRead(String uid, String id) =>
+      _notificationReads[uid]?.contains(id) ?? false;
+
+  Set<String> readNotificationIds(String uid) =>
+      Set.of(_notificationReads[uid] ?? {});
+
   void markNotificationRead(String uid, String id) {
     final list = _notifications[uid];
-    if (list == null) return;
-    final index = list.indexWhere((n) => n.id == id);
-    if (index >= 0) list[index] = list[index].copyWith(read: true);
+    final index = list?.indexWhere((n) => n.id == id) ?? -1;
+    if (index >= 0) {
+      list![index] = list[index].copyWith(read: true);
+      return;
+    }
+    // Not in the user's own list: it is a shared trip notification,
+    // so record the read per-user instead of mutating the shared copy.
+    _notificationReads.putIfAbsent(uid, () => {}).add(id);
   }
 
   void saveToken(String uid, String token) {

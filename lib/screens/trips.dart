@@ -169,7 +169,7 @@ List<Widget> _sharedHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('Invitation sent', size: 26, weight: FontWeight.bold),
   _label(
-    'The invited account can find this trip after signing in. No email is sent.',
+    'The invited account gets an in-app notification and can find this trip after signing in. No email is sent.',
   ),
 ];
 

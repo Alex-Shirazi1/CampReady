@@ -11,14 +11,32 @@ service cloud.firestore {
         return signedIn() && request.auth.token.email in resource.data.get('sharedWithEmails', []);
       }
       allow read: if owner() || invited();
+      // Create-only: !exists() stops a second-device / reloaded create
+      // from overwriting an existing trip and wiping its shares.
       allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerEmail == request.auth.token.email
-        && request.resource.data.id == tripId;
+        && request.resource.data.id == tripId
+        && !exists(/databases/$(database)/documents/trips/$(tripId));
       allow update: if owner()
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.ownerEmail == resource.data.ownerEmail
         && request.resource.data.id == resource.data.id;
       allow delete: if owner();
+      // Trip notifications: one write per trip event, readable by the
+      // owner and by invitees. This is the invitee-delivery channel:
+      // the owner writes here (never into another account's users/
+      // subtree, which the users rule denies), and invitees read the
+      // trip they were invited to. No per-invitee uid lookup is needed.
+      match /notifications/{notifId} {
+        function tripData() { return get(/databases/$(database)/documents/trips/$(tripId)).data; }
+        function tripOwner() { return signedIn() && tripData().ownerUid == request.auth.uid; }
+        function tripInvitee() {
+          return signedIn() && request.auth.token.email in tripData().get('sharedWithEmails', []);
+        }
+        allow read: if tripOwner() || tripInvitee();
+        allow create, delete: if tripOwner();
+        allow update: if false;
+      }
       match /responses/{uid} {
         function trip() { return get(/databases/$(database)/documents/trips/$(tripId)).data; }
         function isOwner() { return signedIn() && trip().ownerUid == request.auth.uid; }

@@ -33,13 +33,27 @@ Local demo data disappears on restart. It is not evidence of Firebase persistenc
 - The UI retains one trip per campsite. Conflicting shared trips produce an explicit notice rather than overwriting either record.
 - Failed writes remain on the current screen and report an error instead of showing a successful save.
 
-Collections: `users/{uid}` for profiles, with `savedCampsites`, `notifications`, and `fcmTokens` subcollections; `trips/{tripId}` for plans, with `responses/{uid}` for invitation responses.
+Collections: `users/{uid}` for profiles, with `savedCampsites`, `notifications`, `notificationReads`, and `fcmTokens` subcollections; `trips/{tripId}` for plans, with `responses/{uid}` for invitation responses and `notifications/{id}` for trip notifications.
 
-`firestore.rules` contains the rules used by this revision, published to the project on November 7, 2026. Updating this local file alone does not publish future changes.
+`firestore.rules` contains the rules used by this revision. Publication to the live project is **not** verified from this repo alone — deploy it and check the console before submission:
+
+```sh
+firebase deploy --only firestore:rules --project campready-group2
+```
+
+(`.firebaserc` sets `campready-group2` as the default project.) Updating the local file alone does not publish future changes. Until the rules in the console match this file, live trip create can still fail: the rules that were live before this revision denied every create.
+
+## Notification delivery
+
+A trip event is written **once** to `trips/{tripId}/notifications/{id}`. The trip owner and everyone in the trip's `sharedWithEmails` can read it, so delivery needs no per-invitee account lookup and no write into another account's `users/{uid}` subtree (which the users rule denies). The owner's own copy also goes to their own `users/{uid}/notifications` list. That is why sharing with an email that has not signed up yet still delivers: the invitee reads the trip notification when they sign in and load the trip.
+
+Read state is per-user: marking a shared trip notification read writes a marker to the reader's own `users/{uid}/notificationReads/{id}`, never to the shared record.
 
 ## Messaging
 
-The project’s public Web Push certificate key is configured in the app. For another Firebase project, supply its public key with `FCM_VAPID_KEY`. The key is client configuration, not a server credential. The web service worker handles background notification delivery; the app listens for foreground messages and stores received messages for the signed-in account.
+The project’s public Web Push certificate key is configured in the app. For another Firebase project, supply its public key with `FCM_VAPID_KEY`. The key is client configuration, not a server credential. The VAPID key's ownership against this project's Web Push certificate has **not** been verified in the Firebase console — compare it there before submission; a wrong key fails registration at runtime and no local test catches it.
+
+Push registration runs on sign-in (restoring an already-granted registration) and from Save Preferences (which requests permission — a user gesture). The app listens for foreground messages (`onMessage`), routes tapped background messages to their trip (`onMessageOpenedApp`), refreshes tokens (`onRegistered` — the firebase_messaging 17 replacement for the deprecated `onTokenRefresh` — old token removed), and the web service worker shows background notifications (`onBackgroundMessage` in `web/firebase-messaging-sw.js`, plus a tap-to-focus handler). The mobile background handler in `lib/main.dart` is registered off-web; the project is web-only, so it has no native Firebase config to initialise with yet.
 
 Permission denial, missing setup, and registration failures are reported separately from saving notification preferences. Signing out detaches the device registration from the account.
 
