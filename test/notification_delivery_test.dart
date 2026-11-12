@@ -228,6 +228,8 @@ void main() {
       final services = CampReadyServices.local();
       final seen = <RemoteMessage>[];
       final sub = services.messaging.onMessageOpened.listen(seen.add);
+      final banners = <AppNotification>[];
+      final bannerSub = services.messaging.onMessage.listen(banners.add);
       const message = RemoteMessage(
         messageId: 'msg-1',
         data: {'tripId': 'trip_1', 'site': 'Redwood Grove'},
@@ -242,7 +244,9 @@ void main() {
       expect(seen, [message]);
       expect(services.messaging.delivered.map((n) => n.id), contains('msg-1'));
       expect(services.messaging.delivered.first.tripId, 'trip_1');
+      expect(banners, isEmpty, reason: 'a tapped push opens the trip only');
       await sub.cancel();
+      await bannerSub.cancel();
     });
   });
 

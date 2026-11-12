@@ -114,7 +114,8 @@ class MessagingService {
     );
     if (_delivered.any((n) => n.id == notification.id)) return;
     _delivered.insert(0, notification);
-    if (!_controller.isClosed) _controller.add(notification);
+    // Only the opened stream: the app navigates to the trip, so it must
+    // not also show the in-app banner for the same message.
     if (!_openedController.isClosed) _openedController.add(message);
   }
 
