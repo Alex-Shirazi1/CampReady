@@ -14,7 +14,7 @@ We split the work about evenly. Alexander built the app's foundation: the coded 
 | Trips and sharing | Trip history and removal, trip sharing between accounts and the matching Firestore rules | Real date picker and booking flow, invite accept and decline, owner view of responses, revoke |
 | Architecture | Repository layout and screen structure the final app builds on | BLoC and Cubits with RepositoryProvider, GoRouter paths, deep links and the auth gate |
 | Sensors and live data | | GPS distance sort with permission fallbacks, camera profile photo, Open-Meteo forecast |
-| Testing | _Alexander: add your device and user testing_ | 235 automated tests, an on-device integration test, and the live two-account test |
+| Testing | _Alexander: add your device and user testing_ | 238 automated tests, an on-device integration test, the live two-account test, and end-to-end push tests |
 | Deployment | Repository owner, pull request reviews and merges, Blaze plan and Cloud Functions deploy | Firebase Hosting deploys of the web app |
 | Presentation | _Slides and video: add your parts_ | _Slides and video: add your parts_ |
 
@@ -40,7 +40,7 @@ We split the work about evenly. Alexander built the app's foundation: the coded 
 | State management | Add bloc packages, Add campsite and stay models, Add repositories, Add cubits and blocs, Move screens to blocs |
 | Routing | Fix web deep links, Send demo links to splash, Open shared trip for invite links, Add route render tests |
 | Sensors | Add photo repository, Add profile photo camera, Add platform permissions, Fix Android location fallback, Recheck location before settings |
-| Messaging backend | Add push cloud functions, Open trip from web push, Skip iOS push without APNs, Send pushes by FID |
+| Messaging backend | Add push cloud functions, Open trip from web push, Skip iOS push without APNs, Send pushes by FID, Register device for push, Enable FID push registration, Match push to its notice, Open tapped push once, Auto-hide push banner |
 | Data and sync | Add weather repository, Rain-aware forecast headline, Refresh lists on tab change, Fix night count, Hide alerts before invite |
 | Platforms | Add Android Firebase config, Add iOS Firebase config, Pin iOS packages, Emulator host for Android tests, Use platform config in emulators |
 | Look and feel | Add CampReady app icon, Match launch screen colors, Clearer sign-in errors, Fix copy and web location retry |
