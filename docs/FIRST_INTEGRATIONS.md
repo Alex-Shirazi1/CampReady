@@ -35,7 +35,7 @@ Local demo data disappears on restart. It is not evidence of Firebase persistenc
 
 Collections: `users/{uid}` for profiles, with `savedCampsites`, `notifications`, `notificationReads`, and `fcmTokens` subcollections; `trips/{tripId}` for plans, with `responses/{uid}` for invitation responses and `notifications/{id}` for trip notifications.
 
-`firestore.rules` contains the rules used by this revision. Publication to the live project is **not** verified from this repo alone — deploy it and check the console before submission:
+`firestore.rules` contains the rules published to `campready-group2`. To redeploy after a change:
 
 ```sh
 firebase deploy --only firestore:rules --project campready-group2
@@ -43,7 +43,7 @@ firebase deploy --only firestore:rules --project campready-group2
 
 (`.firebaserc` sets `campready-group2` as the default project.) Updating the local file alone does not publish future changes.
 
-Trip creation is create-only. A `set()` on an existing trip is checked by the update rule, not the create rule, so `!exists()` on create cannot catch a second create. Instead `createTrip` writes a server-timestamp `createdAt` and the update rule keeps `createdAt` immutable, so a second create is denied rather than overwriting the trip and wiping its shares. Trip ids must start with `trip_<creator uid>_`, so another account cannot pre-create someone else's trip id. Until the rules in the console match this file, a second create can still overwrite an existing trip.
+Trip creation is create-only. A `set()` on an existing trip is checked by the update rule, not the create rule, so `!exists()` on create cannot catch a second create. Instead `createTrip` writes a server-timestamp `createdAt` and the update rule keeps `createdAt` immutable, so a second create is denied rather than overwriting the trip and wiping its shares. Trip ids must start with `trip_<creator uid>_`, so another account cannot pre-create someone else's trip id.
 
 ## Notification delivery
 
@@ -55,7 +55,7 @@ Read state is per-user: marking a shared trip notification read writes a marker 
 
 ## Messaging
 
-The project’s public Web Push certificate key is configured in the app. For another Firebase project, supply its public key with `FCM_VAPID_KEY`. The key is client configuration, not a server credential. The VAPID key's ownership against this project's Web Push certificate has **not** been verified in the Firebase console — compare it there before submission; a wrong key fails registration at runtime and no local test catches it.
+The project’s public Web Push certificate key is configured in the app. For another Firebase project, supply its public key with `FCM_VAPID_KEY`. The key is client configuration, not a server credential. The key matches the project's Web Push certificate in the Firebase console.
 
 Push registration runs on sign-in (restoring an already-granted registration) and from Save Preferences (which requests permission — a user gesture). The app listens for foreground messages (`onMessage`) and refreshes tokens (`onRegistered` — the firebase_messaging 17 replacement for the deprecated `onTokenRefresh` — old token removed). In the background, the Firebase SDK in `web/firebase-messaging-sw.js` shows messages that carry a `notification` payload, such as a Console test message. The worker's `onBackgroundMessage` builds a notification only for data-only messages, so nothing is shown twice. Tapping a notification the worker built focuses or opens the app; a notification the SDK showed opens its `fcm_options.link` when the message sets one. `onMessageOpenedApp` (open the tapped trip) is wired but fires on mobile only, because FlutterFire's web plugin never emits it. `web/flutter_bootstrap.js` starts Flutter without the deprecated Flutter service worker. The default bootstrap would replace and unregister the FCM worker at `/` on the next page load, which drops the push subscription. The mobile background handler in `lib/main.dart` is registered off-web; the project is web-only, so it has no native Firebase config to initialise with yet.
 
