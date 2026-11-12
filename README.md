@@ -104,6 +104,7 @@ The app uses the Firebase project `campready-group2` on all three platforms.
 ```sh
 flutter analyze
 flutter test
+flutter test integration_test/app_test.dart -d emulator-5554   # on a device or emulator
 ```
 
 There are 234 tests:
@@ -112,6 +113,7 @@ There are 234 tests:
 - Repository tests with `mocktail`.
 - Widget flows: sign-up, booking with the date picker, sharing, camera, location, and sync.
 - A test that renders all 100 routes and checks that no prototype text is shown.
+- An on-device integration test: sign up, search, pick dates, book, open the trip.
 
 ### Local Firebase emulators
 
