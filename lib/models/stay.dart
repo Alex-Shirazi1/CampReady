@@ -34,7 +34,11 @@ class Stay extends Equatable {
   final DateTime checkIn;
   final DateTime checkOut;
 
-  int get nights => checkOut.difference(checkIn).inHours ~/ 24;
+  int get nights => DateTime.utc(
+    checkOut.year,
+    checkOut.month,
+    checkOut.day,
+  ).difference(DateTime.utc(checkIn.year, checkIn.month, checkIn.day)).inDays;
 
   /// Null when the stay is valid, otherwise the message to show.
   String? validate(DateTime today) {
