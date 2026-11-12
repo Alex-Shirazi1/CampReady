@@ -7,6 +7,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
   go_router: ^18.1.2
   # First Integrations (CSEN 268): Firebase Auth, Firestore, FCM.
   # Firebase is configured for web (campready-group2). Pass
@@ -19,6 +21,8 @@ dependencies:
   flutter_bloc: ^9.1.1
   equatable: ^3.0.0
   geolocator: ^14.1.2
+  http: ^1.6.0
+  shimmer: ^4.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
