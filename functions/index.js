@@ -13,7 +13,13 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 const logger = require("firebase-functions/logger");
 
-setGlobalOptions({ maxInstances: 10 });
+// Keep costs at zero: small, short-lived functions, nothing kept warm.
+setGlobalOptions({
+  maxInstances: 2,
+  minInstances: 0,
+  memory: "256MiB",
+  timeoutSeconds: 30,
+});
 initializeApp();
 
 const db = getFirestore();
