@@ -69,7 +69,7 @@ Cloud Functions (functions/index.js)
 
 - **State management:** `flutter_bloc`. `AuthBloc` and `NotificationsBloc` use events (the class pattern from the lectures). The other features use Cubits with immutable `Equatable` states. `NotificationsBloc` registers the FCM `onMessage` and `onMessageOpenedApp` listeners and the launch message, and the app shows incoming pushes through a `BlocListener`.
 - **Routing:** `lib/router.dart`. A `refreshListenable` built from the auth and trips streams re-checks redirects when the session or trip list changes.
-- **Push tokens:** each signed-in device saves its FCM registration token under `users/{uid}/fcmTokens`. The functions look recipients up by email with the Admin SDK, skip users with alerts off, and clean up tokens that FCM reports as gone.
+- **Push targets:** like the class `NotificationsBloc`, the app asks for notification permission when a signed-in user has alerts on, calls `FirebaseMessaging.register()`, and saves the device's Firebase Installation ID (FID) under `users/{uid}/fcmTokens`. The functions look recipients up by email with the Admin SDK, send to their FIDs, skip users with alerts off, and remove FIDs that FCM reports as gone. Each push carries the id of its saved notice, so a push and its notice show as one alert.
 - **Local mode:** the same repositories run on an in-memory store for tests and offline previews (`--dart-define=LOCAL_DEMO=true`).
 
 ```
@@ -107,7 +107,7 @@ flutter test
 flutter test integration_test/app_test.dart -d emulator-5554   # on a device or emulator
 ```
 
-There are 235 tests:
+There are 238 tests:
 
 - `bloc_test` tests for every Bloc and Cubit.
 - Repository tests with `mocktail`.
@@ -123,6 +123,8 @@ flutter run -d chrome --dart-define=USE_FIREBASE_EMULATORS=true
 # Android emulator: add --dart-define=EMULATOR_HOST=10.0.2.2
 ```
 
+The functions use `firebase-admin` 14 and need Node 22 on your machine. FCM is not emulated, so pushes from the local functions reach real devices.
+
 ### Deploy
 
 ```sh
@@ -135,7 +137,7 @@ Cloud Functions need the project on the Blaze (pay-as-you-go) plan; usage for th
 
 ### Push on each platform
 
-- **Web and Android:** FCM works with the files in this repo (`web/firebase-messaging-sw.js`, `android/app/google-services.json`). Android 13+ asks for notification permission when alerts are turned on.
+- **Web and Android:** FCM works with the files in this repo (`web/firebase-messaging-sw.js`, `android/app/google-services.json`, and the `firebase_messaging_installation_id_enabled` flag in the Android manifest). Android 13+ asks for notification permission after sign-in when alerts are on.
 - **iOS:** push needs an APNs key from a paid Apple Developer account, uploaded in Firebase → Project settings → Cloud Messaging. Without it the app runs normally and says push is not set up on that iPhone.
 
 ## Documents
