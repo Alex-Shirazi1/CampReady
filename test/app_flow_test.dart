@@ -227,6 +227,37 @@ void main() {
     });
   });
 
+  group('Sync', () {
+    testWidgets('a trip shared from another device shows on the Trips tab', (
+      tester,
+    ) async {
+      final (services, _) = await signedIn();
+      await pumpApp(tester, services, route: '/explore');
+      expect(find.text('Sunset Ridge  ›'), findsNothing);
+      // Written by the friend's device; this app has not reloaded yet.
+      services.store.putTrip(
+        TripRecord(
+          id: TripRecord.idFor('friend-uid', 'Sunset Ridge'),
+          ownerUid: 'friend-uid',
+          ownerEmail: 'friend@example.com',
+          site: 'Sunset Ridge',
+          siteId: 'sunset-ridge',
+          dates: 'Dec 4–6, 2026',
+          sharedWithEmails: const ['owner@example.com'],
+        ),
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('Trips'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Sunset Ridge  ›'), findsOneWidget);
+      expect(find.text('Shared by friend@example.com'), findsOneWidget);
+    });
+  });
+
   group('Camera', () {
     // 1x1 transparent PNG.
     const pixel =

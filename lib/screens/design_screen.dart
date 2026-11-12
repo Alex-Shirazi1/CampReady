@@ -230,13 +230,12 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
 
   String _resolve(String target) {
     target = routeAliases[target] ?? target;
-    final s = _trips.state;
     return switch (target) {
-      'trips' || 'tripsempty' => s.trips.isEmpty ? 'tripsempty' : 'trips',
-      'saved' || 'savedempty' =>
-        context.read<SavedCubit>().state.ids.isEmpty ? 'savedempty' : 'saved',
-      'alerts' ||
-      'alertsempty' => notifications.isEmpty ? 'alertsempty' : 'alerts',
+      // These screens show their own empty state, so a list that fills
+      // in after a refresh appears without navigating again.
+      'trips' || 'tripsempty' => 'trips',
+      'saved' || 'savedempty' => 'saved',
+      'alerts' || 'alertsempty' => 'alerts',
       'profileplus' || 'profileupdated' => 'profile',
       'explore' || 'guest' => guest ? 'guest' : 'explore',
       _ => target,
@@ -747,12 +746,18 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
   );
 
   Future<void> _reload(AppUser me) async {
+    final trips = _trips;
+    final notes = context.read<NotificationsBloc>();
     await Future.wait([
-      _trips.load(me),
+      trips.load(me),
       context.read<SavedCubit>().load(me.uid),
       _profile.load(me.uid),
     ]);
-    _refreshNotifications();
+    notes.add(
+      NotificationsRefreshRequested(
+        tripIds: {for (final t in trips.state.trips) t.id},
+      ),
+    );
   }
 
   void _refreshNotifications() {
@@ -915,6 +920,9 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
       _authGate();
       return;
     }
+    // Pick up changes made on other devices or by the group.
+    final me = user;
+    if (me != null && index > 0) unawaited(_reload(me));
     _goRoot(const ['explore', 'trips', 'saved', 'alerts', 'profile'][index]);
   }
 
@@ -1350,41 +1358,49 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
                   child: Form(
                     key: form,
                     child: AutofillGroup(
-                      child: ListView(
-                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
-                        children: [
-                          if (route == 'loading')
-                            const Padding(
-                              padding: EdgeInsets.all(20),
-                              child: Center(child: CircularProgressIndicator()),
-                            ),
-                          for (final section in widget.screen.body(this))
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 14),
-                              child: section,
-                            ),
-                          if (route.startsWith('profile'))
-                            TextButton(
-                              onPressed: () => act('Refresh account'),
-                              child: const Text('Refresh account'),
-                            ),
-                          if (route == 'guide')
-                            ExpansionTile(
-                              title: const Text('All prototype screens'),
-                              children: [
-                                for (final screen in campPages)
-                                  ListTile(
-                                    title: Text(
-                                      screen.name.replaceAll(
-                                        ' · Complete flow',
-                                        '',
+                      child: RefreshIndicator(
+                        notificationPredicate: (_) =>
+                            !guest && _tabRoots.contains(route),
+                        onRefresh: () => _reload(user!),
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+                          children: [
+                            if (route == 'loading')
+                              const Padding(
+                                padding: EdgeInsets.all(20),
+                                child: Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                              ),
+                            for (final section in widget.screen.body(this))
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 14),
+                                child: section,
+                              ),
+                            if (route.startsWith('profile'))
+                              TextButton(
+                                onPressed: () => act('Refresh account'),
+                                child: const Text('Refresh account'),
+                              ),
+                            if (route == 'guide')
+                              ExpansionTile(
+                                title: const Text('All prototype screens'),
+                                children: [
+                                  for (final screen in campPages)
+                                    ListTile(
+                                      title: Text(
+                                        screen.name.replaceAll(
+                                          ' · Complete flow',
+                                          '',
+                                        ),
                                       ),
+                                      onTap: () =>
+                                          context.go('/${screen.route}'),
                                     ),
-                                    onTap: () => context.go('/${screen.route}'),
-                                  ),
-                              ],
-                            ),
-                        ],
+                                ],
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
