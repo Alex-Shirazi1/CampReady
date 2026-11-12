@@ -25,16 +25,8 @@ class FirebaseBackend {
   }
 
   static Future<void> _defaultInitializer() async {
-    const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
     await Firebase.initializeApp(
-      options: emulator
-          ? const FirebaseOptions(
-              apiKey: 'demo-api-key',
-              appId: '1:123456789:web:demo',
-              messagingSenderId: '123456789',
-              projectId: 'demo-campready',
-            )
-          : DefaultFirebaseOptions.currentPlatform,
+      options: DefaultFirebaseOptions.currentPlatform,
     );
   }
 }
