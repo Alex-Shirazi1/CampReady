@@ -51,8 +51,16 @@ class CampReadyServices {
     }
     const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
     if (emulator) {
-      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+      const authPort = int.fromEnvironment('AUTH_PORT', defaultValue: 9099);
+      const firestorePort = int.fromEnvironment(
+        'FIRESTORE_PORT',
+        defaultValue: 8080,
+      );
+      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', authPort);
+      FirebaseFirestore.instance.useFirestoreEmulator(
+        '127.0.0.1',
+        firestorePort,
+      );
     }
     final store = LocalStore();
     final firestore = FirestoreService(store: store, useFirebase: true);

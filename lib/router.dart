@@ -253,6 +253,7 @@ GoRouter buildRouter({
 
   return GoRouter(
     initialLocation: initialLocation,
+    overridePlatformDefaultLocation: true,
     refreshListenable: StreamToListenable([auth.stream, trips.stream]),
     redirect: redirect,
     routes: [
