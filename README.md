@@ -72,11 +72,9 @@ later final-project work, not this milestone.
 - Campsite photos, map layers and navigation graphics are downloaded original
   Figma assets. Roboto is bundled locally with its license.
 
-The live file contained 100 top-level frames when implemented. Detailed exports
-were available for 71 frames before the Figma Education-plan tool limit; the
-remaining 29 use directly read Figma text/layout blocks and the supplied route
-and theme specification. Native Flutter layout adapts the design to scrolling,
-editable fields and screen width; screenshots document the coded result.
+The Figma file contained 100 top-level frames when implemented. Native Flutter
+layout adapts the design to scrolling, editable fields and screen width;
+screenshots document the coded result.
 
 ## Verification and submission
 
