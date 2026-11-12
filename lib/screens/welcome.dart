@@ -2,14 +2,14 @@ part of '../screens.dart';
 
 List<Widget> _guideHeader(PageControls ui) => [
   _label('CampReady', size: 26, weight: FontWeight.bold),
-  _label('CSEN 268 · Group 2 · Prototype walkthrough'),
+  _label('CSEN 268 · Group 2 · Demo build walkthrough'),
 ];
 
 List<Widget> _guideBody(PageControls ui) => [
   _panel([
     _label('How to try it', weight: FontWeight.w500),
     _label(
-      'Tap sample fields and options. Scroll long screens. Bookings, emails, payments and downloads are simulated; no real transactions occur.',
+      'Shortcuts into each flow. Bookings and payments are simulated; no real transactions occur.',
     ),
   ], color: softGreen),
   _button('Start full app', () => ui.act('Start full app', 'splash')),
@@ -23,12 +23,8 @@ List<Widget> _guideBody(PageControls ui) => [
   ], onTap: () => ui.act('Explore and plan', 'explore')),
   _panel([
     _label('Trips and group sharing', weight: FontWeight.w500),
-    _label(
-      'Seed a Redwood trip and open its saved record',
-      size: 12,
-      color: muted,
-    ),
-  ], onTap: () => ui.act('Trips and group sharing', 'trip')),
+    _label('Open your trips and their group', size: 12, color: muted),
+  ], onTap: () => ui.act('Trips and group sharing', 'trips')),
   _panel([
     _label('Account and Plus', weight: FontWeight.w500),
     _label(
@@ -45,12 +41,6 @@ List<Widget> _guideBody(PageControls ui) => [
       color: muted,
     ),
   ], onTap: () => ui.act('Recovery scenarios', 'states')),
-  _panel([
-    _label('Review scope', weight: FontWeight.w500),
-    _label(
-      'Two sample date ranges; all alternative outcomes are explicitly labelled demo controls.',
-    ),
-  ], color: softGreen),
   _label('Atishay Jain · Alexander Shirazi'),
 ];
 
@@ -249,7 +239,7 @@ List<Widget> _forgotHeader(PageControls ui) => [
 ];
 
 List<Widget> _forgotBody(PageControls ui) => [
-  ui.input('Email', 'john.doe@example.com', 'john.doe@example.com'),
+  ui.input('Email', 'Enter your email', ''),
   _button('Send reset link', () => ui.act('Send reset link', 'resetsent')),
   _button('Back to sign in', () => ui.act('Back to sign in', 'signin')),
 ];
@@ -264,14 +254,14 @@ List<Widget> _resetsentBody(PageControls ui) => [
   _panel([
     _label('Reset link requested', weight: FontWeight.w500),
     _label(
-      'If an account exists for john.doe@example.com, you’ll receive a password reset link.',
+      'If an account exists for ${ui.resetEmail}, you’ll receive a password reset link.',
     ),
   ], color: softGreen),
   _label(
     'Follow the link to choose a new password, then return to CampReady.',
     color: muted,
   ),
-  _button('Back to sign in', () => ui.act('Back to sign in', 'signinfilled')),
+  _button('Back to sign in', () => ui.act('Back to sign in', 'signin')),
   _button('Send another link', () => ui.act('Send another link', 'forgot')),
 ];
 
@@ -290,10 +280,7 @@ List<Widget> _locationBody(PageControls ui) => [
     'CampReady uses your location while you search. You can always enter a destination instead.',
     color: muted,
   ),
-  _button(
-    'Allow location',
-    () => ui.act('Allow location', 'location-permission'),
-  ),
+  _button('Allow location', () => ui.act('Allow location')),
   _button(
     'Enter a destination instead',
     () => ui.act('Enter a destination instead', 'search'),
@@ -303,7 +290,7 @@ List<Widget> _locationBody(PageControls ui) => [
 List<Widget> _deniedHeader(PageControls ui) => [
   _back(ui),
   _label('Pick your destination', size: 26, weight: FontWeight.bold),
-  _label('Location access is off.', color: muted),
+  _label(ui.locationMessage, color: muted),
 ];
 
 List<Widget> _deniedBody(PageControls ui) => [
@@ -315,7 +302,7 @@ List<Widget> _deniedBody(PageControls ui) => [
   ], color: softGreen),
   ui.input('Destination', 'Santa Cruz, California', ''),
   _button('Search campsites', () => ui.act('Search campsites')),
-  _button('Try location again', () => ui.act('Try location again', 'location')),
+  _button('Try location again', () => ui.act('Try location again')),
 ];
 
 List<Widget> _authgateHeader(PageControls ui) => [
@@ -334,5 +321,5 @@ List<Widget> _authgateBody(PageControls ui) => [
   ], color: softGreen),
   _button('Sign in', () => ui.act('Sign in', 'signin')),
   _button('Create an account', () => ui.act('Create an account', 'signup')),
-  _button('Keep browsing', () => ui.act('Keep browsing', 'guestdetail')),
+  _button('Keep browsing', () => ui.act('Keep browsing')),
 ];

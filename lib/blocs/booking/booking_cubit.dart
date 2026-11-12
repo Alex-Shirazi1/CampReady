@@ -43,6 +43,9 @@ class BookingCubit extends Cubit<BookingState> {
     return true;
   }
 
+  void missingDates() =>
+      emit(state.copyWith(error: 'Choose your arrival and checkout dates.'));
+
   void setAlerts(bool alerts) => emit(state.copyWith(alerts: alerts));
 
   void clear() => emit(const BookingState());

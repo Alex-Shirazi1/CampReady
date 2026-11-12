@@ -19,13 +19,14 @@ class NotificationRepository {
 
   String get pushStatus => _messaging.status;
 
-  /// In-app list for [user], newest first. Only updates for trips in
-  /// [tripIds] (or with no trip) are kept.
+  /// In-app list for [user], newest first. When [tripIds] is given,
+  /// only updates for those trips (or with no trip) are kept.
   Future<List<AppNotification>> load(
     AppUser user, {
-    required Set<String> tripIds,
+    Set<String>? tripIds,
   }) async {
     final notes = await _firestore.notifications(user.uid, email: user.email);
+    if (tripIds == null) return notes;
     return notes
         .where((n) => n.tripId == null || tripIds.contains(n.tripId))
         .toList();

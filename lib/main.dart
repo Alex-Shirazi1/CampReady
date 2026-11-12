@@ -2,36 +2,27 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
+import 'package:go_router/go_router.dart';
 
 import 'app.dart';
+import 'firebase_options.dart';
 import 'services/services.dart';
 import 'theme.dart';
 
-/// Background-message handler for mobile. Must be top-level, must
-/// initialise Firebase first, and must not touch the UI. On web this
-/// is not used — the service worker (`web/firebase-messaging-sw.js`)
-/// handles background messages instead — so it is only registered
-/// off-web. The project is web-only by design (no native Firebase
-/// app is registered), so on mobile this initialises with no platform
-/// config and returns quietly; the handler exists so the Dart side is
-/// already wired when a native app is registered.
+/// Runs when a push arrives while the app is in the background or
+/// closed (Android and iOS). The system shows the notification itself.
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(
-  RemoteMessage message,
-) async {
-  try {
-    await Firebase.initializeApp();
-  } catch (_) {
-    // No native Firebase configuration: nothing to deliver to.
-  }
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 }
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  usePathUrlStrategy();
+  GoRouter.optionURLReflectsImperativeAPIs = true;
   if (!kIsWeb) {
-    FirebaseMessaging.onBackgroundMessage(
-      _firebaseMessagingBackgroundHandler,
-    );
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
   runApp(const CampReadyStartup());
 }
@@ -57,8 +48,8 @@ class _CampReadyStartupState extends State<CampReadyStartup> {
     builder: (context, snapshot) {
       if (snapshot.hasData) return CampReady(services: snapshot.data!);
       return MaterialApp(
-        initialRoute: '/',
         theme: campTheme(),
+        debugShowCheckedModeBanner: false,
         home: Scaffold(
           body: Center(
             child: Padding(
@@ -68,8 +59,10 @@ class _CampReadyStartupState extends State<CampReadyStartup> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         const Text(
-                          'CampReady could not connect to Firebase. Check your connection and platform configuration.',
+                          'CampReady could not connect. Check your connection and try again.',
+                          textAlign: TextAlign.center,
                         ),
+                        const SizedBox(height: 16),
                         FilledButton(
                           onPressed: () =>
                               setState(() => services = initialize()),

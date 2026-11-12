@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'theme.dart';
+import 'models/campsite.dart';
+import 'models/stay.dart';
+import 'repositories/trip_repository.dart';
 import 'services/services.dart';
+import 'theme.dart';
 
 part 'screens/welcome.dart';
 part 'screens/explore.dart';
@@ -14,26 +17,43 @@ part 'screens/registry.dart';
 
 abstract class PageControls {
   void back();
-  void goTo(String route);
+  void goTo(String route, {Object? extra});
   void act(String label, [String? target]);
-  String display(String value);
-  String noticeValue(String name, String fallback);
   Widget input(String label, String hint, String initial);
   Widget filter(String label);
   Widget alertSwitch(String label);
   Widget areaMap();
   Widget brandMark(String asset, Widget caption);
-  bool get ridgeMatch;
-  bool get hasRedwoodAlert;
-  List<String> get savedSites;
 
-  /// Notification records for this account (MessagingService /
-  /// Firestore), newest first. Empty until a condition changes.
-  List<AppNotification> get notifications;
+  /// Live forecast for the current campsite (and trip dates, if any).
+  Widget forecast({bool details = false});
+  Widget profilePhoto();
 
-  /// 'firebase' when Firebase is configured, otherwise 'local'.
-  String get backendMode;
+  Campsite get campsite;
+  TripView? get trip;
+  String get tripDates;
+  String get draftDates;
+  String? get bookingError;
+  String get bookingTotal;
+  bool get alertsOn;
+  String get userName;
+  String get userEmail;
+  String get resetEmail;
+  bool get plus;
   String get destination;
+  List<Campsite> get results;
+  List<Campsite> get savedSites;
+  List<Campsite> get matches;
+  List<TripView> get trips;
+  List<TripView> get downloads;
+  List<AppNotification> get notifications;
+  AppNotification? get selectedNotification;
+  String? distanceLabel(Campsite site);
+  String get locationMessage;
+  String get shareLink;
+  bool get showDemo;
+  bool get localMode;
+  bool get nearMe;
 }
 
 typedef PageWidgets = List<Widget> Function(PageControls ui);
@@ -150,6 +170,7 @@ Widget _photo(String path, double height, String label) => ClipRRect(
 
 Widget _campsiteCard(
   String path,
+  String name,
   List<Widget> description,
   VoidCallback onTap,
 ) => InkWell(
@@ -165,21 +186,9 @@ Widget _campsiteCard(
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _photo(path, 142, 'Redwood Grove'),
+        _photo(path, 142, name),
         Padding(padding: const EdgeInsets.all(16), child: _lines(description)),
       ],
     ),
-  ),
-);
-
-Widget _forecastDay(List<Widget> forecast) => Expanded(
-  child: Container(
-    margin: const EdgeInsets.only(right: 4),
-    padding: const EdgeInsets.all(10),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: _lines(forecast),
   ),
 );

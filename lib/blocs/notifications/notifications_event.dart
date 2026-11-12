@@ -3,9 +3,9 @@ part of 'notifications_bloc.dart';
 sealed class NotificationsEvent {}
 
 class NotificationsStarted extends NotificationsEvent {
-  NotificationsStarted(this.user, {this.tripIds = const {}});
+  NotificationsStarted(this.user, {this.tripIds});
   final AppUser user;
-  final Set<String> tripIds;
+  final Set<String>? tripIds;
 }
 
 class NotificationsStopped extends NotificationsEvent {}

@@ -74,7 +74,7 @@ class NotificationsBloc extends Bloc<NotificationsEvent, NotificationsState> {
   ) => _load(event.tripIds, emit);
 
   Future<void> _load(
-    Set<String> tripIds,
+    Set<String>? tripIds,
     Emitter<NotificationsState> emit,
   ) async {
     final user = _user;

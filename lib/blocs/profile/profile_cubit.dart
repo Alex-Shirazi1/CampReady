@@ -12,11 +12,14 @@ class ProfileCubit extends Cubit<ProfileState> {
 
   final ProfileRepository profileRepository;
   final NotificationRepository notificationRepository;
+  int _loadVersion = 0;
 
   Future<void> load(String uid) async {
+    final version = ++_loadVersion;
     emit(state.copyWith(status: ProfileStatus.loading));
     try {
       final settings = await profileRepository.load(uid);
+      if (version != _loadVersion) return;
       emit(ProfileState(status: ProfileStatus.ready, settings: settings));
       if (settings.alertsEnabled) {
         try {
@@ -24,6 +27,7 @@ class ProfileCubit extends Cubit<ProfileState> {
         } catch (_) {}
       }
     } catch (_) {
+      if (version != _loadVersion) return;
       emit(
         state.copyWith(
           status: ProfileStatus.failure,
@@ -33,7 +37,10 @@ class ProfileCubit extends Cubit<ProfileState> {
     }
   }
 
-  void clear() => emit(const ProfileState());
+  void clear() {
+    _loadVersion++;
+    emit(const ProfileState());
+  }
 
   /// Saves the alert preference and registers or removes this device's
   /// push token. Returns a warning when push could not be updated.

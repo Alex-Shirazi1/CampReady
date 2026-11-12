@@ -114,8 +114,8 @@ const List<CampPage> campPages = [
   CampPage(
     'guestdetail',
     'guestdetail · Redwood Grove',
-    _guestdetailHeader,
-    _guestdetailBody,
+    _detailHeader,
+    _detailBody,
   ),
   CampPage(
     'detailsaved',
@@ -123,25 +123,20 @@ const List<CampPage> campPages = [
     _detailsavedHeader,
     _detailsavedBody,
   ),
-  CampPage('ridge', 'ridge · Sunset Ridge', _ridgeHeader, _ridgeBody),
+  CampPage('ridge', 'ridge · Sunset Ridge', _detailHeader, _detailBody),
   CampPage(
     'ridgereview',
     'ridgereview · Review your trip',
-    _ridgereviewHeader,
-    _ridgereviewBody,
+    _reviewHeader,
+    _reviewBody,
   ),
   CampPage(
     'ridgeconfirmed',
     'ridgeconfirmed · Trip plan saved',
-    _ridgeconfirmedHeader,
-    _ridgeconfirmedBody,
+    _confirmedHeader,
+    _confirmedBody,
   ),
-  CampPage(
-    'ridgetrip',
-    'ridgetrip · Sunset Ridge',
-    _ridgetripHeader,
-    _ridgetripBody,
-  ),
+  CampPage('ridgetrip', 'ridgetrip · Sunset Ridge', _tripHeader, _tripBody),
   CampPage(
     'conditions',
     'conditions · Trip Conditions',
