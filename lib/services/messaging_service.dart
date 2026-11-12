@@ -203,7 +203,7 @@ class MessagingService {
           serviceWorkerScriptPath: kIsWeb ? 'firebase-messaging-sw.js' : null,
         ),
         registered.future,
-      ]).timeout(const Duration(seconds: 15));
+      ], eagerError: true).timeout(const Duration(seconds: 15));
       return result.last as String;
     } catch (_) {
       await _registration?.cancel();
