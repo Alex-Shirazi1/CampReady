@@ -56,11 +56,13 @@ class CampReadyServices {
         'FIRESTORE_PORT',
         defaultValue: 8080,
       );
-      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', authPort);
-      FirebaseFirestore.instance.useFirestoreEmulator(
-        '127.0.0.1',
-        firestorePort,
+      // Android emulators reach the host machine at 10.0.2.2.
+      const host = String.fromEnvironment(
+        'EMULATOR_HOST',
+        defaultValue: '127.0.0.1',
       );
+      await FirebaseAuth.instance.useAuthEmulator(host, authPort);
+      FirebaseFirestore.instance.useFirestoreEmulator(host, firestorePort);
     }
     final store = LocalStore();
     final firestore = FirestoreService(store: store, useFirebase: true);
