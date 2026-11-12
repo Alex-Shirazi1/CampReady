@@ -36,20 +36,21 @@ async function sendToUsers(uids, { title, body, tripId, site }) {
       logger.info("Alerts off, skipping", { uid });
       continue;
     }
-    const tokenDocs = await db.collection(`users/${uid}/fcmTokens`).get();
-    const tokens = tokenDocs.docs.map((doc) => doc.id);
-    if (tokens.length === 0) {
+    // The app saves each device's Firebase Installation ID (FID).
+    const fidDocs = await db.collection(`users/${uid}/fcmTokens`).get();
+    const fids = fidDocs.docs.map((doc) => doc.id);
+    if (fids.length === 0) {
       logger.info("No device registered", { uid });
       continue;
     }
     const response = await getMessaging().sendEachForMulticast({
-      tokens,
+      fids,
       notification: { title, body },
       data: { tripId: tripId || "", site: site || "" },
       webpush: tripId ? { fcmOptions: { link: `${SITE}/trips/${tripId}` } } : undefined,
     });
     sent += response.successCount;
-    // Forget tokens for uninstalled apps or revoked browser permission.
+    // Forget devices that uninstalled the app or revoked permission.
     await Promise.all(
       response.responses.map((r, i) => {
         const code = r.error && r.error.code;
@@ -57,7 +58,7 @@ async function sendToUsers(uids, { title, body, tripId, site }) {
           code === "messaging/registration-token-not-registered" ||
           code === "messaging/invalid-registration-token"
         ) {
-          return db.doc(`users/${uid}/fcmTokens/${tokens[i]}`).delete();
+          return db.doc(`users/${uid}/fcmTokens/${fids[i]}`).delete();
         }
         if (r.error) logger.warn("Send failed", { uid, code });
         return null;
