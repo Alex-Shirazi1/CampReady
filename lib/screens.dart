@@ -69,7 +69,6 @@ class CampPage {
   final String route, name;
   final PageWidgets header, body;
   final bool tabs;
-  String? get statusAsset => 'assets/images/a1ff48a2723cc98a.png';
   List<String> get tabAssets => const [
     'assets/images/cbc170d6adb6bb4f.png',
     'assets/images/fd4ffee87d64d43e.png',
