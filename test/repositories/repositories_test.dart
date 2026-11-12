@@ -2,10 +2,13 @@ import 'package:campready/repositories/auth_repository.dart';
 import 'package:campready/repositories/campsite_repository.dart';
 import 'package:campready/repositories/location_repository.dart';
 import 'package:campready/repositories/notification_repository.dart';
+import 'package:campready/repositories/photo_repository.dart';
 import 'package:campready/repositories/profile_repository.dart';
 import 'package:campready/repositories/trip_repository.dart';
 import 'package:campready/services/services.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -31,7 +34,10 @@ void main() {
   late MockFirestore firestore;
   late MockMessaging messaging;
 
+  photoTests();
   setUpAll(() {
+    registerFallbackValue(ImageSource.camera);
+    registerFallbackValue(CameraDevice.front);
     registerFallbackValue(owner);
     registerFallbackValue(trip);
     registerFallbackValue(const SavedCampsite(siteId: '', name: ''));
@@ -325,6 +331,68 @@ void main() {
       when(() => geo.distanceBetween(any(), any(), any(), any()))
           .thenReturn(1609.344 * 3);
       expect(LocationRepository(geolocator: geo).milesBetween(0, 0, 1, 1), 3);
+    });
+  });
+}
+
+class MockPicker extends Mock implements ImagePicker {}
+
+void photoTests() {
+  group('PhotoRepository', () {
+    late MockPicker picker;
+    setUp(() => picker = MockPicker());
+
+    void answer(Future<XFile?> Function() result) => when(
+      () => picker.pickImage(
+        source: any(named: 'source'),
+        maxWidth: any(named: 'maxWidth'),
+        maxHeight: any(named: 'maxHeight'),
+        imageQuality: any(named: 'imageQuality'),
+        preferredCameraDevice: any(named: 'preferredCameraDevice'),
+      ),
+    ).thenAnswer((_) => result());
+
+    test('a small photo is returned as base64', () async {
+      answer(() async => XFile.fromData(Uint8List.fromList([1, 2, 3])));
+      expect(await PhotoRepository(picker: picker).pick(camera: true), 'AQID');
+      verify(
+        () => picker.pickImage(
+          source: ImageSource.camera,
+          maxWidth: 320,
+          maxHeight: 320,
+          imageQuality: 70,
+          preferredCameraDevice: CameraDevice.front,
+        ),
+      ).called(1);
+    });
+
+    test('cancelling returns null', () async {
+      answer(() async => null);
+      expect(await PhotoRepository(picker: picker).pick(camera: false), isNull);
+    });
+
+    test('denied camera permission gives a clear message', () async {
+      answer(() async => throw PlatformException(code: 'camera_access_denied'));
+      expect(
+        () => PhotoRepository(picker: picker).pick(camera: true),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('Camera access is off'),
+          ),
+        ),
+      );
+    });
+
+    test('photos over 200 KB are refused', () async {
+      answer(
+        () async => XFile.fromData(Uint8List(PhotoRepository.maxBytes + 1)),
+      );
+      expect(
+        () => PhotoRepository(picker: picker).pick(camera: false),
+        throwsStateError,
+      );
     });
   });
 }

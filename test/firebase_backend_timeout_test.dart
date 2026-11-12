@@ -19,19 +19,21 @@ void main() {
       FirebaseBackend.configured = false;
     });
 
-    test('a never-completing initializer returns false within the timeout',
-        () async {
-      final stopwatch = Stopwatch()..start();
-      final result = await FirebaseBackend.initialize(
-        initializer: () => Completer<void>().future,
-        timeout: const Duration(milliseconds: 200),
-      );
-      stopwatch.stop();
-      expect(result, isFalse);
-      expect(FirebaseBackend.configured, isFalse);
-      // Must have given up near the timeout, not hung forever.
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 5)));
-    });
+    test(
+      'a never-completing initializer returns false within the timeout',
+      () async {
+        final stopwatch = Stopwatch()..start();
+        final result = await FirebaseBackend.initialize(
+          initializer: () => Completer<void>().future,
+          timeout: const Duration(milliseconds: 200),
+        );
+        stopwatch.stop();
+        expect(result, isFalse);
+        expect(FirebaseBackend.configured, isFalse);
+        // Must have given up near the timeout, not hung forever.
+        expect(stopwatch.elapsed, lessThan(const Duration(seconds: 5)));
+      },
+    );
 
     test('a failing initializer returns false', () async {
       final result = await FirebaseBackend.initialize(

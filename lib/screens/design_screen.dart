@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,7 @@ import '../repositories/auth_repository.dart';
 import '../repositories/campsite_repository.dart';
 import '../repositories/location_repository.dart';
 import '../repositories/notification_repository.dart';
+import '../repositories/photo_repository.dart';
 import '../repositories/trip_repository.dart';
 import '../repositories/weather_repository.dart';
 import '../router.dart';
@@ -668,6 +670,17 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
         if (id != null) _goTrip(id);
         return;
 
+      // Camera and photo library
+      case 'Take photo' || 'Choose photo':
+        if (me == null) return;
+        final photo = await context.read<PhotoRepository>().pick(
+          camera: label == 'Take photo',
+        );
+        if (photo == null) return;
+        await _profile.setPhoto(me.uid, photo);
+        if (mounted) notice('Profile photo saved.');
+        return;
+
       // Plus (simulated)
       case 'Confirm upgrade':
         if (showDemo) {
@@ -1025,23 +1038,54 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
 
   @override
   Widget profilePhoto() {
-    final initials = userName.isEmpty || guest
+    final photo = _profile.state.photo;
+    final initials = guest
         ? '?'
         : userName.trim().split(RegExp(r'\s+')).map((w) => w[0]).take(2).join();
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: CircleAvatar(
-        radius: 36,
-        backgroundColor: softGreen,
-        child: Text(
-          initials.toUpperCase(),
-          style: const TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            color: forest,
+    ImageProvider? image;
+    if (photo != null && photo.isNotEmpty) {
+      try {
+        image = MemoryImage(base64Decode(photo));
+      } catch (_) {
+        image = null;
+      }
+    }
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 36,
+          backgroundColor: softGreen,
+          backgroundImage: image,
+          child: image == null
+              ? Text(
+                  initials.toUpperCase(),
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: forest,
+                  ),
+                )
+              : null,
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextButton.icon(
+                onPressed: () => act('Take photo'),
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: const Text('Take photo'),
+              ),
+              TextButton.icon(
+                onPressed: () => act('Choose photo'),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Choose photo'),
+              ),
+            ],
           ),
         ),
-      ),
+      ],
     );
   }
 

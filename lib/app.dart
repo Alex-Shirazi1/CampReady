@@ -13,6 +13,7 @@ import 'repositories/auth_repository.dart';
 import 'repositories/campsite_repository.dart';
 import 'repositories/location_repository.dart';
 import 'repositories/notification_repository.dart';
+import 'repositories/photo_repository.dart';
 import 'repositories/profile_repository.dart';
 import 'repositories/trip_repository.dart';
 import 'repositories/weather_repository.dart';
@@ -27,6 +28,7 @@ class CampReady extends StatefulWidget {
     this.services,
     this.locationRepository,
     this.weatherRepository,
+    this.photoRepository,
     this.clock,
   });
 
@@ -34,6 +36,7 @@ class CampReady extends StatefulWidget {
   final CampReadyServices? services;
   final LocationRepository? locationRepository;
   final WeatherRepository? weatherRepository;
+  final PhotoRepository? photoRepository;
   final DateTime Function()? clock;
 
   @override
@@ -63,6 +66,7 @@ class _CampReadyState extends State<CampReady> {
       widget.locationRepository ?? LocationRepository();
   late final weatherRepository =
       widget.weatherRepository ?? WeatherRepository(clock: widget.clock);
+  late final photoRepository = widget.photoRepository ?? PhotoRepository();
 
   late final authBloc = AuthBloc(authRepository);
   late final tripsCubit = TripsCubit(tripRepository);
@@ -170,6 +174,7 @@ class _CampReadyState extends State<CampReady> {
         RepositoryProvider.value(value: notificationRepository),
         RepositoryProvider.value(value: locationRepository),
         RepositoryProvider.value(value: weatherRepository),
+        RepositoryProvider.value(value: photoRepository),
       ],
       child: MultiBlocProvider(
         providers: [

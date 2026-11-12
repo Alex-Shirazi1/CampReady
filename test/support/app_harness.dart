@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:campready/app.dart';
 import 'package:campready/repositories/location_repository.dart';
+import 'package:campready/repositories/photo_repository.dart';
 import 'package:campready/repositories/weather_repository.dart';
 import 'package:campready/screens/design_screen.dart';
 import 'package:campready/services/services.dart';
@@ -16,6 +17,8 @@ import 'package:mocktail/mocktail.dart';
 final today = DateTime(2026, 11, 11, 10);
 
 class FakeLocation extends Mock implements LocationRepository {}
+
+class FakePhoto extends Mock implements PhotoRepository {}
 
 /// A location repository that answers with [status] and real distances.
 FakeLocation fakeLocation([
@@ -84,6 +87,7 @@ Future<void> pumpApp(
   String route = '/explore',
   LocationRepository? location,
   WeatherRepository? weather,
+  PhotoRepository? photo,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
@@ -96,6 +100,7 @@ Future<void> pumpApp(
       initialRoute: route,
       locationRepository: location ?? fakeLocation(),
       weatherRepository: weather ?? fakeWeather(),
+      photoRepository: photo ?? FakePhoto(),
       clock: () => today,
     ),
   );

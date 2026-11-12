@@ -228,6 +228,51 @@ void main() {
     });
   });
 
+  group('Camera', () {
+    // 1x1 transparent PNG.
+    const pixel =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+    testWidgets('taking a photo saves it to the profile', (tester) async {
+      final (services, user) = await signedIn();
+      final photo = FakePhoto();
+      when(() => photo.pick(camera: true)).thenAnswer((_) async => pixel);
+      await pumpApp(tester, services, route: '/profile', photo: photo);
+      expect(find.text('O'), findsOneWidget);
+      await tap(tester, 'Take photo');
+      expect(find.text('Profile photo saved.'), findsOneWidget);
+      expect(find.text('O'), findsNothing);
+      expect((await services.firestore.userSettings(user.uid))['photo'], pixel);
+    });
+
+    testWidgets('a denied camera shows why and saves nothing', (tester) async {
+      final (services, user) = await signedIn();
+      final photo = FakePhoto();
+      when(() => photo.pick(camera: true)).thenThrow(
+        StateError(
+          'Camera access is off. Allow it in Settings to take a photo.',
+        ),
+      );
+      await pumpApp(tester, services, route: '/profile', photo: photo);
+      await tap(tester, 'Take photo');
+      expect(find.textContaining('Camera access is off'), findsOneWidget);
+      expect(
+        (await services.firestore.userSettings(user.uid))['photo'],
+        isNull,
+      );
+    });
+
+    testWidgets('cancelling the picker changes nothing', (tester) async {
+      final (services, _) = await signedIn();
+      final photo = FakePhoto();
+      when(() => photo.pick(camera: false)).thenAnswer((_) async => null);
+      await pumpApp(tester, services, route: '/profile', photo: photo);
+      await tap(tester, 'Choose photo');
+      expect(find.text('Profile photo saved.'), findsNothing);
+      expect(find.text('O'), findsOneWidget);
+    });
+  });
+
   group('Booking', () {
     testWidgets('dates come from the date picker and create a trip', (
       tester,
