@@ -167,7 +167,7 @@ void main() {
     setUp(() {
       profiles = MockProfileRepository();
       notes = MockNotificationRepository();
-      when(() => notes.restorePush(any())).thenAnswer((_) async {});
+      when(() => notes.enablePush(any())).thenAnswer((_) async {});
     });
 
     blocTest<ProfileCubit, ProfileState>(
@@ -184,7 +184,37 @@ void main() {
           settings: ProfileSettings(plus: true, alertsEnabled: false),
         ),
       ],
-      verify: (_) => verifyNever(() => notes.restorePush(any())),
+      verify: (_) => verifyNever(() => notes.enablePush(any())),
+    );
+
+    blocTest<ProfileCubit, ProfileState>(
+      'load with alerts on registers this device for push',
+      setUp: () =>
+          when(() => profiles.load('u1'))
+              .thenAnswer((_) async => const ProfileSettings()),
+      build: () => ProfileCubit(profiles, notes),
+      act: (c) => c.load('u1'),
+      expect: () => [
+        const ProfileState(status: ProfileStatus.loading),
+        const ProfileState(status: ProfileStatus.ready),
+      ],
+      verify: (_) => verify(() => notes.enablePush('u1')).called(1),
+    );
+
+    blocTest<ProfileCubit, ProfileState>(
+      'load still works when push is denied',
+      setUp: () {
+        when(() => profiles.load('u1'))
+            .thenAnswer((_) async => const ProfileSettings());
+        when(() => notes.enablePush('u1'))
+            .thenThrow(StateError('Push permission denied'));
+      },
+      build: () => ProfileCubit(profiles, notes),
+      act: (c) => c.load('u1'),
+      expect: () => [
+        const ProfileState(status: ProfileStatus.loading),
+        const ProfileState(status: ProfileStatus.ready),
+      ],
     );
 
     blocTest<ProfileCubit, ProfileState>(

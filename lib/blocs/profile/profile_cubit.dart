@@ -21,9 +21,11 @@ class ProfileCubit extends Cubit<ProfileState> {
       final settings = await profileRepository.load(uid);
       if (version != _loadVersion) return;
       emit(ProfileState(status: ProfileStatus.ready, settings: settings));
+      // Like the class NotificationsBloc: ask for permission at start-up
+      // and register this device, so a new user with alerts on gets pushes.
       if (settings.alertsEnabled) {
         try {
-          await notificationRepository.restorePush(uid);
+          await notificationRepository.enablePush(uid);
         } catch (_) {}
       }
     } catch (_) {

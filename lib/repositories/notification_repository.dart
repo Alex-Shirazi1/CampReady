@@ -48,9 +48,6 @@ class NotificationRepository {
     }
   }
 
-  /// Registers again without prompting when permission was already given.
-  Future<void> restorePush(String uid) => _messaging.restoreRegistration(uid);
-
   Future<void> disablePush() => _messaging.detachUser();
 
   static AppNotification fromRemote(RemoteMessage message) => AppNotification(

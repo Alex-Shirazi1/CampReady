@@ -43,7 +43,6 @@ class MessagingService {
   StreamSubscription<String>? _tokenRefresh;
   StreamSubscription<String>? _registration;
   String status = 'Push not enabled';
-  static const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
   static const vapidKey = String.fromEnvironment(
     'FCM_VAPID_KEY',
     // Public Web Push certificate key for campready-group2 — a public
@@ -53,7 +52,7 @@ class MessagingService {
   );
 
   Future<void> initialize() async {
-    if (!useFirebase || emulator) return;
+    if (!useFirebase) return;
     _foreground ??= FirebaseMessaging.onMessage.listen((message) {
       if (_uid == null || FirebaseAuth.instance.currentUser?.uid != _uid) {
         return;
@@ -121,7 +120,7 @@ class MessagingService {
 
   /// The message that launched the app from a terminated state.
   Future<AppNotification?> initialMessage() async {
-    if (!useFirebase || emulator) return null;
+    if (!useFirebase) return null;
     final message = await FirebaseMessaging.instance.getInitialMessage();
     if (message == null) return null;
     return AppNotification(
@@ -134,21 +133,7 @@ class MessagingService {
     );
   }
 
-  Future<void> restoreRegistration(String uid) async {
-    if (!useFirebase || emulator || (kIsWeb && vapidKey.isEmpty)) return;
-    if (!await FirebaseMessaging.instance.isSupported()) return;
-    final settings = await FirebaseMessaging.instance.getNotificationSettings();
-    if (settings.authorizationStatus == AuthorizationStatus.authorized ||
-        settings.authorizationStatus == AuthorizationStatus.provisional) {
-      await getToken(uid);
-    }
-  }
-
   Future<bool> requestPermission() async {
-    if (emulator) {
-      status = 'Push cannot be tested in the Firebase emulators';
-      return false;
-    }
     if (!useFirebase) return true;
     if (kIsWeb && vapidKey.isEmpty) {
       status = 'Web push needs the project VAPID key';
@@ -169,7 +154,6 @@ class MessagingService {
   }
 
   Future<String?> getToken(String uid) async {
-    if (emulator) return null;
     if (useFirebase && FirebaseAuth.instance.currentUser?.uid != uid) {
       return null;
     }
@@ -240,7 +224,7 @@ class MessagingService {
     status = 'Push not enabled';
     await registration?.cancel();
     if (uid != null && token != null) {
-      if (useFirebase && !emulator) {
+      if (useFirebase) {
         await FirebaseMessaging.instance.unregister();
       }
       await _firestore.removeFcmToken(uid, token);
