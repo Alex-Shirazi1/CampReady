@@ -26,16 +26,21 @@ messaging.onBackgroundMessage((payload) => {
   });
 });
 
-// Tapping a background notification focuses the open app tab, or
-// opens CampReady when it is not open.
+// Tapping a notification opens its trip. Pushes sent by the backend
+// carry a link that the Firebase SDK opens itself.
 self.addEventListener('notificationclick', (event) => {
+  const data = event.notification.data || {};
+  if (data.FCM_MSG) return;
   event.notification.close();
+  const url = data.tripId ? `/trips/${data.tripId}` : '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
-        if ('focus' in client) return client.focus();
+        if ('navigate' in client) {
+          return client.navigate(url).then((c) => (c || client).focus());
+        }
       }
-      if (clients.openWindow) return clients.openWindow('/');
+      if (clients.openWindow) return clients.openWindow(url);
     }),
   );
 });

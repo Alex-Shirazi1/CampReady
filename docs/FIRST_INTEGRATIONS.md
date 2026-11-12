@@ -1,5 +1,7 @@
 # First Integrations
 
+> Milestone record from November 2026. The final app (BLoC, sensors, push backend, Android and iOS) is described in the [README](../README.md).
+
 CSEN 268 · Group 2 · Assignment 1080282 · Due November 12, 2026, 11:59 PM Pacific
 
 The milestone calls for the first integration of data, messaging, and authentication. The app keeps the submitted Figma screens and ordinary Flutter widgets, named routes, and service classes.

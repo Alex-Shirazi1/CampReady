@@ -1,15 +1,9 @@
-// Firestore data for CampReady.
-//
-// Configured mode: Cloud Firestore, collections
-//   users/{uid}                        profile (AppUser)
+// Cloud Firestore data, or the in-memory LocalStore in local mode.
+//   users/{uid}                        profile, alerts, plan, photo
 //   users/{uid}/savedCampsites/{site}  saved campsites
-//   users/{uid}/notifications/{id}     notification records
-//   users/{uid}/fcmTokens/{token}      FCM installation tokens
-//   trips/{tripId}                     trips; ownerUid owns the trip,
-//                                      sharedWithEmails lists invitees,
-//                                      so an invited user can read it.
-// Local mode: the same API backed by LocalStore. Trips are visible to
-// the owner and to any email listed in sharedWithEmails, in both modes.
+//   users/{uid}/notifications/{id}     the user's notices
+//   users/{uid}/fcmTokens/{token}      push tokens per device
+//   trips/{tripId}                     trips, shared by email
 
 import 'dart:async';
 
@@ -49,7 +43,7 @@ class FirestoreService {
           .set({'alertsEnabled': enabled}, SetOptions(merge: true))
           .timeout(timeout);
     } else {
-      _store.alertPreferences[uid] = enabled;
+      _store.userSettings.putIfAbsent(uid, () => {})['alertsEnabled'] = enabled;
     }
   }
 
@@ -58,7 +52,28 @@ class FirestoreService {
       final doc = await _db.collection('users').doc(uid).get().timeout(timeout);
       return doc.data()?['alertsEnabled'] as bool? ?? true;
     }
-    return _store.alertPreferences[uid] ?? true;
+    return _store.userSettings[uid]?['alertsEnabled'] as bool? ?? true;
+  }
+
+  /// Fields on users/{uid}: alertsEnabled, plan, photo.
+  Future<Map<String, dynamic>> userSettings(String uid) async {
+    if (useFirebase) {
+      final doc = await _db.collection('users').doc(uid).get().timeout(timeout);
+      return doc.data() ?? {};
+    }
+    return Map.of(_store.userSettings[uid] ?? {});
+  }
+
+  Future<void> updateUserSettings(String uid, Map<String, dynamic> data) async {
+    if (useFirebase) {
+      await _db
+          .collection('users')
+          .doc(uid)
+          .set(data, SetOptions(merge: true))
+          .timeout(timeout);
+      return;
+    }
+    _store.userSettings.putIfAbsent(uid, () => {}).addAll(data);
   }
 
   Future<AppUser?> getUserProfile(String uid) async {
@@ -155,18 +170,9 @@ class FirestoreService {
   // --- trips ---
 
   Future<TripRecord> createTrip(TripRecord trip) async {
-    // Create-only: a second-device / reloaded create must not silently
-    // overwrite an existing trip and wipe its shares. set() on an
-    // existing doc is checked by the UPDATE rule, not the create rule,
-    // so this write carries a new server-timestamp createdAt and the
-    // rules keep createdAt immutable: a second create is denied, and
-    // the write itself is the check.
-    // Do NOT read the doc first to test for existence: the trip read
-    // rule dereferences resource.data, which is null for a doc that
-    // does not exist yet, so a pre-flight get is denied (403) for every
-    // brand-new trip and booking can never succeed. If the write is
-    // denied, only then read the doc — a doc that exists is readable
-    // by its owner, so a successful read there means "already exists".
+    // Create-only: the rules refuse a second create (createdAt can't
+    // change), so an existing trip is never overwritten. Reading first
+    // would be denied for a trip that doesn't exist yet.
     if (useFirebase) {
       try {
         await _db
@@ -406,18 +412,8 @@ class FirestoreService {
 
   // --- notifications ---
   //
-  // Delivery model (fixed in this revision): a trip event is written
-  // ONCE to `trips/{tripId}/notifications/{id}`. The owner and every
-  // invitee can read that subcollection, so delivery needs no
-  // per-invitee uid lookup and no cross-user write into another
-  // account's `users/{uid}` subtree (which the users rule denies).
-  // The owner's own copy still goes to their own list, and FCM
-  // foreground saves also go there. [notifications] merges both
-  // sources for the signed-in account, newest first, de-duplicated
-  // by id. A trip notification is included for invitees only — the
-  // owner already has their own copy, so including it again would
-  // double-count (and would show the owner an "invited" notice about
-  // their own trip).
+  // Trip events are written once to trips/{tripId}/notifications, which
+  // invitees can read. The owner keeps a copy in users/{uid}/notifications.
 
   Future<AppNotification> addNotification(
     String uid,
@@ -436,10 +432,8 @@ class FirestoreService {
     return _store.addNotification(uid, notification);
   }
 
-  /// Writes one trip notification, readable by the trip owner and by
-  /// everyone in the trip's `sharedWithEmails`. The caller must have
-  /// persisted the trip first; the rules deny the write when the trip
-  /// does not exist or the writer is not its owner.
+  /// One trip notice readable by the owner and every invitee. Only the
+  /// owner may write it (see firestore.rules).
   Future<AppNotification> addTripNotification(
     String tripId,
     AppNotification notification,
@@ -477,19 +471,33 @@ class FirestoreService {
       // The owner's own copy already covers their trips; trip
       // notifications are the invitees' delivery channel.
       if (trip.ownerUid == uid) continue;
-      // A denied or missing trip-notifications read (e.g. stale
-      // rules without the subcollection) must not fail the whole
-      // load: the trip itself is still visible, only its
-      // notifications are missing.
+      // A failed notifications read must not hide the trip itself.
       try {
-        for (final note in await _tripNotifications(trip.id)) {
+        final notes = await _tripNotifications(trip.id);
+        // Group updates from before this person was first invited are
+        // not theirs.
+        DateTime? invitedAt;
+        for (final note in notes) {
+          final at = note.createdAt;
+          if (note.recipientEmail != me || at == null) continue;
+          if (invitedAt == null || at.isBefore(invitedAt)) invitedAt = at;
+        }
+        for (final note in notes) {
           if (merged.containsKey(note.id)) continue;
           // An invitation notice is addressed to one invitee; others on
           // the same trip must not see it as their own invitation.
           final recipient = note.recipientEmail;
           if (recipient != null && recipient != me) continue;
-          merged[note.id] =
-              readIds.contains(note.id) ? note.copyWith(read: true) : note;
+          final at = note.createdAt;
+          if (recipient == null &&
+              invitedAt != null &&
+              at != null &&
+              at.isBefore(invitedAt)) {
+            continue;
+          }
+          merged[note.id] = readIds.contains(note.id)
+              ? note.copyWith(read: true)
+              : note;
         }
       } catch (_) {
         continue;
@@ -547,10 +555,7 @@ class FirestoreService {
     return _store.readNotificationIds(uid);
   }
 
-  /// Resolves the email for [uid] so visible trips can be found.
-  /// Returns null when it cannot be resolved (for example, reading
-  /// another account's profile in Firebase mode is denied by the
-  /// users rule); callers then return the user's own list only.
+  /// Email for [uid], or null when that profile can't be read.
   Future<String?> _emailFor(String uid) async {
     if (useFirebase) {
       try {
@@ -612,11 +617,8 @@ class FirestoreService {
 
   Future<void> markNotificationRead(String uid, String id) async {
     if (useFirebase) {
-      // set(merge) instead of update: it must not throw when the doc
-      // does not exist in the user's own list (a shared trip
-      // notification lives under the trip, not here). The read marker
-      // is per-user, so marking one invitee's copy read does not mark
-      // it read for everyone else.
+      // A per-user read marker, so marking a shared trip notice read
+      // doesn't mark it for the rest of the group.
       await _db
           .collection('users')
           .doc(uid)

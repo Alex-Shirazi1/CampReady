@@ -1,7 +1,5 @@
-// The CampReady services container for First Integrations.
-// One shared LocalStore backs all three services in local mode; in
-// configured mode the same services talk to Firebase Auth, Cloud
-// Firestore and Firebase Cloud Messaging.
+// Auth, Firestore and Messaging services, backed by Firebase or, in
+// local mode, by one shared in-memory LocalStore.
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -51,8 +49,18 @@ class CampReadyServices {
     }
     const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
     if (emulator) {
-      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+      const authPort = int.fromEnvironment('AUTH_PORT', defaultValue: 9099);
+      const firestorePort = int.fromEnvironment(
+        'FIRESTORE_PORT',
+        defaultValue: 8080,
+      );
+      // Android emulators reach the host machine at 10.0.2.2.
+      const host = String.fromEnvironment(
+        'EMULATOR_HOST',
+        defaultValue: '127.0.0.1',
+      );
+      await FirebaseAuth.instance.useAuthEmulator(host, authPort);
+      FirebaseFirestore.instance.useFirestoreEmulator(host, firestorePort);
     }
     final store = LocalStore();
     final firestore = FirestoreService(store: store, useFirebase: true);

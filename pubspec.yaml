@@ -7,6 +7,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
   go_router: ^18.1.2
   # First Integrations (CSEN 268): Firebase Auth, Firestore, FCM.
   # Firebase is configured for web (campready-group2). Pass
@@ -16,10 +18,21 @@ dependencies:
   firebase_auth: ^7.0.0
   cloud_firestore: ^7.0.0
   firebase_messaging: ^17.0.1
+  flutter_bloc: ^9.1.1
+  equatable: ^3.0.0
+  geolocator: ^14.1.2
+  http: ^1.6.0
+  shimmer: ^4.0.0
+  image_picker: ^1.2.4
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
+  bloc_test: ^10.0.0
+  mocktail: ^1.0.5
+  flutter_launcher_icons: ^0.14.4
 flutter:
   uses-material-design: true
   assets:
@@ -32,3 +45,16 @@ flutter:
           weight: 500
         - asset: assets/fonts/Roboto-Bold.ttf
           weight: 700
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  remove_alpha_ios: true
+  adaptive_icon_background: "#365744"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  web:
+    generate: true
+    image_path: "assets/icon/icon.png"
+    background_color: "#F7F4EE"
+    theme_color: "#365744"

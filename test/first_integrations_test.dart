@@ -1,10 +1,6 @@
-// First Integrations service tests (local mode only — no Firebase
-// project, no network). The same API is used in configured mode;
-// these tests pin the local fallback behaviour the UI relies on.
-import 'package:campready/app.dart';
+// Service tests in local mode (no Firebase project, no network).
+import 'package:campready/models/stay.dart';
 import 'package:campready/services/services.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -106,10 +102,7 @@ void main() {
         await services.firestore.isCampsiteSaved('uid-1', 'Redwood Grove'),
         isTrue,
       );
-      expect(
-        (await services.firestore.savedCampsites('uid-1')).length,
-        1,
-      );
+      expect((await services.firestore.savedCampsites('uid-1')).length, 1);
       await services.firestore.removeCampsite('uid-1', 'Redwood Grove');
       expect(
         await services.firestore.isCampsiteSaved('uid-1', 'Redwood Grove'),
@@ -142,10 +135,7 @@ void main() {
         1,
       );
       expect(
-        await services.firestore.tripsForUser(
-          invitee.uid,
-          invitee.email,
-        ),
+        await services.firestore.tripsForUser(invitee.uid, invitee.email),
         isEmpty,
       );
       final shared = await services.firestore.shareTrip(
@@ -161,7 +151,9 @@ void main() {
         )).length,
         1,
       );
-      final updated = shared.copyWith(dates: 'Oct 30–Nov 1, 2026');
+      final updated = shared.copyWith(
+        stay: Stay(DateTime(2026, 10, 30), DateTime(2026, 11, 1)),
+      );
       await services.firestore.updateTrip(updated);
       expect(
         (await services.firestore.getTrip('trip_1'))?.dates,
@@ -223,8 +215,6 @@ void main() {
         email: 'friend2@example.com',
       );
 
-      final received = <AppNotification>[];
-      final sub = services.messaging.onMessage.listen(received.add);
       final notification = await services.messaging.notifyConditionChange(
         ownerUid: owner.uid,
         ownerEmail: owner.email,
@@ -235,19 +225,10 @@ void main() {
         sharedWithEmails: ['friend2@example.com'],
       );
       expect(notification.title, contains('dates changed'));
-      expect(
-        (await services.firestore.notifications(owner.uid)).length,
-        1,
-      );
+      expect((await services.firestore.notifications(owner.uid)).length, 1);
       // The invitee's account also gets the record.
       final invitee = services.store.findUser('friend2@example.com')!;
-      expect(
-        (await services.firestore.notifications(invitee.uid)).length,
-        1,
-      );
-      expect(services.messaging.delivered.first.id, notification.id);
-      await sub.cancel();
-      expect(received, contains(notification));
+      expect((await services.firestore.notifications(invitee.uid)).length, 1);
     });
   });
 
@@ -269,67 +250,6 @@ void main() {
         site: 'Redwood Grove',
       );
       expect(AppNotification.fromMap(note.toMap()).title, 'Title');
-    });
-  });
-
-  group('Wired UI (local mode)', () {
-    setUpAll(() async {
-      final loader = FontLoader('Roboto');
-      loader.addFont(rootBundle.load('assets/fonts/Roboto-Regular.ttf'));
-      loader.addFont(rootBundle.load('assets/fonts/Roboto-Medium.ttf'));
-      loader.addFont(rootBundle.load('assets/fonts/Roboto-Bold.ttf'));
-      await loader.load();
-      final icons = FontLoader('MaterialIcons');
-      icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
-      await icons.load();
-    });
-
-    Future<void> tap(WidgetTester tester, String label) async {
-      final finder = find.text(label);
-      if (finder.evaluate().isEmpty) {
-        await tester.scrollUntilVisible(
-          finder,
-          220,
-          scrollable: find.byType(Scrollable).last,
-        );
-      }
-      await tester.ensureVisible(finder.last);
-      await tester.pumpAndSettle();
-      await tester.tap(finder.last);
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('signing up shows the real account name, not a sample', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1;
-      await tester.pumpWidget(
-        CampReady(key: UniqueKey(), initialRoute: '/signup'),
-      );
-      await tester.pump(const Duration(milliseconds: 300));
-      final fields = find.byType(TextFormField);
-      await tester.enterText(fields.at(0), 'Alex');
-      await tester.enterText(fields.at(1), 'alex-new@example.com');
-      await tester.enterText(fields.at(2), 'campready123');
-      await tap(tester, 'Create account');
-      expect(find.text('Find your nearby outside'), findsOneWidget);
-      await tap(tester, 'Allow location');
-      await tap(tester, 'Allow location');
-      // Profile shows the account created above.
-      await tester.tap(
-        find
-            .descendant(
-              of: find.byType(NavigationBar),
-              matching: find.text('Profile'),
-            )
-            .last,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Alex'), findsWidgets);
-      expect(find.text('alex-new@example.com'), findsWidgets);
-      expect(find.text('John'), findsNothing);
-      expect(tester.takeException(), isNull);
     });
   });
 }

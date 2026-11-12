@@ -43,7 +43,6 @@ class MessagingService {
   StreamSubscription<String>? _tokenRefresh;
   StreamSubscription<String>? _registration;
   String status = 'Push not enabled';
-  static const emulator = bool.fromEnvironment('USE_FIREBASE_EMULATORS');
   static const vapidKey = String.fromEnvironment(
     'FCM_VAPID_KEY',
     // Public Web Push certificate key for campready-group2 — a public
@@ -52,14 +51,22 @@ class MessagingService {
     defaultValue: 'BGeSQTWeHDPAyNrhJJOFCnQ7-Bc0Kq2fqh_nWJmQ6DnfSkXo6Q3nPixmgJ2QyhjIWhWm6h_c3ePZiTHE5oEhzfE',
   );
 
+  /// The saved notice this push is for, so a push and its notice show as
+  /// one alert. Falls back to the FCM message id.
+  static String noticeId(RemoteMessage message, String fallback) {
+    final id = message.data['notificationId'] as String?;
+    if (id != null && id.isNotEmpty) return id;
+    return message.messageId ?? fallback;
+  }
+
   Future<void> initialize() async {
-    if (!useFirebase || emulator) return;
+    if (!useFirebase) return;
     _foreground ??= FirebaseMessaging.onMessage.listen((message) {
       if (_uid == null || FirebaseAuth.instance.currentUser?.uid != _uid) {
         return;
       }
       final notification = AppNotification(
-        id: message.messageId ?? _store.nextId('fcm'),
+        id: noticeId(message, _store.nextId('fcm')),
         title: message.notification?.title ?? 'Trip update',
         body: message.notification?.body ?? '',
         tripId: message.data['tripId'] as String?,
@@ -81,10 +88,8 @@ class MessagingService {
     _opened ??= FirebaseMessaging.onMessageOpenedApp.listen(
       handleOpenedMessage,
     );
-    // Token refresh: firebase_messaging 17 deprecated onTokenRefresh;
-    // onRegistered emits the token whenever registration changes,
-    // including a refresh. When a new token arrives for the signed-in
-    // account, save it and remove the old one.
+    // onRegistered also fires when the token refreshes: save the new
+    // token and drop the old one.
     _tokenRefresh ??= FirebaseMessaging.instance.onRegistered.listen((
       newToken,
     ) async {
@@ -104,13 +109,11 @@ class MessagingService {
     });
   }
 
-  /// Handles a tapped background notification: records it like a
-  /// foreground message and emits the raw message so the app can
-  /// route to its trip. Kept separate from the listener so tests can
-  /// drive it with a constructed [RemoteMessage].
+  /// A tapped background notification: recorded and passed on so the
+  /// app can open its trip.
   void handleOpenedMessage(RemoteMessage message) {
     final notification = AppNotification(
-      id: message.messageId ?? _store.nextId('fcm-opened'),
+      id: noticeId(message, _store.nextId('fcm-opened')),
       title: message.notification?.title ?? 'Trip update',
       body: message.notification?.body ?? '',
       tripId: message.data['tripId'] as String?,
@@ -119,25 +122,27 @@ class MessagingService {
     );
     if (_delivered.any((n) => n.id == notification.id)) return;
     _delivered.insert(0, notification);
-    if (!_controller.isClosed) _controller.add(notification);
+    // Only the opened stream: the app navigates to the trip, so it must
+    // not also show the in-app banner for the same message.
     if (!_openedController.isClosed) _openedController.add(message);
   }
 
-  Future<void> restoreRegistration(String uid) async {
-    if (!useFirebase || emulator || (kIsWeb && vapidKey.isEmpty)) return;
-    if (!await FirebaseMessaging.instance.isSupported()) return;
-    final settings = await FirebaseMessaging.instance.getNotificationSettings();
-    if (settings.authorizationStatus == AuthorizationStatus.authorized ||
-        settings.authorizationStatus == AuthorizationStatus.provisional) {
-      await getToken(uid);
-    }
+  /// The message that launched the app from a terminated state.
+  Future<AppNotification?> initialMessage() async {
+    if (!useFirebase) return null;
+    final message = await FirebaseMessaging.instance.getInitialMessage();
+    if (message == null) return null;
+    return AppNotification(
+      id: noticeId(message, _store.nextId('fcm-initial')),
+      title: message.notification?.title ?? 'Trip update',
+      body: message.notification?.body ?? '',
+      tripId: message.data['tripId'] as String?,
+      site: message.data['site'] as String?,
+      createdAt: DateTime.now(),
+    );
   }
 
   Future<bool> requestPermission() async {
-    if (emulator) {
-      status = 'Push cannot be tested in the Firebase emulators';
-      return false;
-    }
     if (!useFirebase) return true;
     if (kIsWeb && vapidKey.isEmpty) {
       status = 'Web push needs the project VAPID key';
@@ -158,7 +163,6 @@ class MessagingService {
   }
 
   Future<String?> getToken(String uid) async {
-    if (emulator) return null;
     if (useFirebase && FirebaseAuth.instance.currentUser?.uid != uid) {
       return null;
     }
@@ -172,6 +176,14 @@ class MessagingService {
     if (kIsWeb && vapidKey.isEmpty) {
       status = 'Web push needs the project VAPID key';
       return null;
+    }
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      // iOS push needs an APNs key from a paid Apple Developer account.
+      final apns = await FirebaseMessaging.instance.getAPNSToken();
+      if (apns == null) {
+        status = 'Push is not set up for iPhone in this build';
+        return null;
+      }
     }
     await _registration?.cancel();
     final registered = Completer<String>();
@@ -200,7 +212,7 @@ class MessagingService {
           serviceWorkerScriptPath: kIsWeb ? 'firebase-messaging-sw.js' : null,
         ),
         registered.future,
-      ]).timeout(const Duration(seconds: 15));
+      ], eagerError: true).timeout(const Duration(seconds: 15));
       return result.last as String;
     } catch (_) {
       await _registration?.cancel();
@@ -221,7 +233,7 @@ class MessagingService {
     status = 'Push not enabled';
     await registration?.cancel();
     if (uid != null && token != null) {
-      if (useFirebase && !emulator) {
+      if (useFirebase) {
         await FirebaseMessaging.instance.unregister();
       }
       await _firestore.removeFcmToken(uid, token);
@@ -232,26 +244,8 @@ class MessagingService {
     await _firestore.saveFcmToken(uid, token);
   }
 
-  /// Delivers a condition-change notification to the owner and to
-  /// every invitee, in both modes, with one write per destination:
-  ///
-  /// * the owner's own copy goes to their own notifications list;
-  /// * one trip-scoped copy goes to `trips/{tripId}/notifications`,
-  ///   which the owner and every invitee can read.
-  ///
-  /// The old implementation looked each invitee up in the local
-  /// in-memory store (`_store.findUser`), which is empty in Firebase
-  /// mode, and then wrote into the invitee's `users/{uid}` subtree,
-  /// which the rules deny. Trip-scoped delivery needs neither a uid
-  /// lookup nor a cross-user write, and it reaches invitees who sign
-  /// up after being shared with. [sharedWithEmails] is kept so the
-  /// caller still declares the recipients; delivery itself is by trip
-  /// membership, so a stale or partial list cannot silently drop an
-  /// invitee who is on the trip.
-  ///
-  /// [notifyOwner] is the owner's own alert preference. It covers only
-  /// the owner's copy: invitees still get the trip-scoped copy, and
-  /// each invitee's own preference decides whether they see alerts.
+  /// Saves a trip update once on the trip, where the owner and every
+  /// invitee can read it, plus the owner's own copy when [notifyOwner].
   Future<AppNotification> notifyConditionChange({
     required String ownerUid,
     required String ownerEmail,
@@ -274,20 +268,11 @@ class MessagingService {
       await _firestore.addNotification(ownerUid, notification);
     }
     await _firestore.addTripNotification(tripId, notification);
-    if (notifyOwner) {
-      _delivered.insert(0, notification);
-      if (!_controller.isClosed) _controller.add(notification);
-    }
     return notification;
   }
 
-  /// Notifies the invitee that they were added to a trip. One
-  /// trip-scoped write (see [notifyConditionChange]): the invitee
-  /// reads it from the trip, with no uid lookup and no cross-user
-  /// write. It is addressed to [inviteeEmail], so other invitees on
-  /// the same trip do not see it as their own invitation. The owner
-  /// gets no copy, not even in this session's in-app stream: it is
-  /// their own trip, and the notice is written to the invitee.
+  /// Tells the invitee they were added to a trip. Addressed to their
+  /// email so other people on the trip don't see it.
   Future<AppNotification> notifyTripShared({
     required String ownerUid,
     required String ownerEmail,

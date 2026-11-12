@@ -3,26 +3,33 @@ part of '../screens.dart';
 List<Widget> _profileHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('Your profile', size: 26, weight: FontWeight.bold),
-  _label('CampReady Free'),
+  _label(ui.plus ? 'CampReady Plus' : 'CampReady Free'),
 ];
 
 List<Widget> _profileBody(PageControls ui) => [
+  ui.profilePhoto(),
   _panel([
     _label('Name', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Name', 'John')),
+    _label(ui.userName),
   ], color: softGreen),
   _panel([
     _label('Email', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Email', 'john.doe@example.com')),
+    _label(ui.userEmail),
   ], color: softGreen),
   _panel([
     _label('Edit profile', weight: FontWeight.w500),
-    _label('Update your sample display name', size: 12, color: muted),
+    _label('Change your display name', size: 12, color: muted),
   ], onTap: () => ui.act('Edit profile', 'editprofile')),
-  _panel([
-    _label('Explore Plus', weight: FontWeight.w500),
-    _label('Multiple trips and offline summaries', size: 12, color: muted),
-  ], onTap: () => ui.act('Explore Plus', 'premium')),
+  if (ui.plus)
+    _panel([
+      _label('Manage membership', weight: FontWeight.w500),
+      _label('Plan and download multiple trips', size: 12, color: muted),
+    ], onTap: () => ui.act('Manage membership', 'subscription'))
+  else
+    _panel([
+      _label('Explore Plus', weight: FontWeight.w500),
+      _label('Multiple trips and offline summaries', size: 12, color: muted),
+    ], onTap: () => ui.act('Explore Plus', 'premium')),
   _panel([
     _label('Downloaded trips', weight: FontWeight.w500),
     _label('View saved offline summaries', size: 12, color: muted),
@@ -33,7 +40,7 @@ List<Widget> _profileBody(PageControls ui) => [
   ], onTap: () => ui.act('Notification preferences', 'preferences')),
   _panel([
     _label('About CampReady', weight: FontWeight.w500),
-    _label('Sources and prototype information', size: 12, color: muted),
+    _label('Sources and how the app works', size: 12, color: muted),
   ], onTap: () => ui.act('About CampReady', 'about')),
   _button('Sign out', () => ui.act('Sign out', 'signout')),
   _button('Explore', () => ui.act('Explore', 'explore')),
@@ -42,24 +49,25 @@ List<Widget> _profileBody(PageControls ui) => [
 List<Widget> _editprofileHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('Edit profile', size: 26, weight: FontWeight.bold),
-  _label('Tap the name to use a sample edit.'),
+  _label('This name appears on your profile.'),
 ];
 
 List<Widget> _editprofileBody(PageControls ui) => [
-  ui.input('Display name', 'Display name', ''),
+  ui.input('Display name', 'Display name', ui.userName),
   _panel([
     _label('Email', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Email', 'john.doe@example.com')),
+    _label(ui.userEmail),
   ], color: softGreen),
   _button('Save profile', () => ui.act('Save profile', 'profilesaved')),
-  _panel([
-    _label('Test empty name', weight: FontWeight.w500),
-    _label(
-      'Show validation without changing saved data',
-      size: 12,
-      color: muted,
-    ),
-  ], onTap: () => ui.act('Test empty name', 'enter-a-display-name')),
+  if (ui.showDemo)
+    _panel([
+      _label('Test empty name', weight: FontWeight.w500),
+      _label(
+        'Show validation without changing saved data',
+        size: 12,
+        color: muted,
+      ),
+    ], onTap: () => ui.act('Test empty name', 'enter-a-display-name')),
   _button('Cancel', () => ui.act('Cancel')),
 ];
 
@@ -72,48 +80,9 @@ List<Widget> _profilesavedHeader(PageControls ui) => [
 List<Widget> _profilesavedBody(PageControls ui) => [
   _panel([
     _label('Name', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Name', 'John')),
+    _label(ui.userName),
   ], color: softGreen),
-  _button('Done', () => ui.act('Done')),
-];
-
-List<Widget> _profileupdatedHeader(PageControls ui) => [
-  _button('‹ Back', ui.back),
-  _label('Your profile', size: 26, weight: FontWeight.bold),
-  _label('CampReady Free'),
-];
-
-List<Widget> _profileupdatedBody(PageControls ui) => [
-  _panel([
-    _label('Name', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Name', 'John')),
-  ], color: softGreen),
-  _panel([
-    _label('Email', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Email', 'john.doe@example.com')),
-  ], color: softGreen),
-  _panel([
-    _label('Edit profile', weight: FontWeight.w500),
-    _label('Update your sample display name', size: 12, color: muted),
-  ], onTap: () => ui.act('Edit profile', 'editprofile')),
-  _panel([
-    _label('Explore Plus', weight: FontWeight.w500),
-    _label('Multiple trips and offline summaries', size: 12, color: muted),
-  ], onTap: () => ui.act('Explore Plus', 'premium')),
-  _panel([
-    _label('Downloaded trips', weight: FontWeight.w500),
-    _label('View saved offline summaries', size: 12, color: muted),
-  ], onTap: () => ui.act('Downloaded trips')),
-  _panel([
-    _label('Notification preferences', weight: FontWeight.w500),
-    _label('Choose and save your preference', size: 12, color: muted),
-  ], onTap: () => ui.act('Notification preferences', 'preferences')),
-  _panel([
-    _label('About CampReady', weight: FontWeight.w500),
-    _label('Sources and prototype information', size: 12, color: muted),
-  ], onTap: () => ui.act('About CampReady', 'about')),
-  _button('Sign out', () => ui.act('Sign out', 'signout')),
-  _button('Explore', () => ui.act('Explore', 'explore')),
+  _button('Done', () => ui.act('Done', 'profile')),
 ];
 
 List<Widget> _signoutHeader(PageControls ui) => [
@@ -123,8 +92,8 @@ List<Widget> _signoutHeader(PageControls ui) => [
 ];
 
 List<Widget> _signoutBody(PageControls ui) => [
-  _button('Sign out', () => ui.act('Sign out', 'welcome')),
-  _button('Stay signed in', () => ui.act('Stay signed in')),
+  _button('Sign out', () => ui.act('Confirm sign out')),
+  _button('Stay signed in', () => ui.act('Stay signed in', 'profile')),
 ];
 
 List<Widget> _premiumHeader(PageControls ui) => [
@@ -137,7 +106,7 @@ List<Widget> _premiumBody(PageControls ui) => [
   _panel([
     _label('Your basics stay free', weight: FontWeight.w500),
     _label(
-      'Campsite browsing, conditions and essential change alerts are always included.',
+      'Campsite browsing, live conditions, one trip with your group and push alerts are always included.',
     ),
   ], color: softGreen),
   _panel([
@@ -160,11 +129,8 @@ List<Widget> _premiumBody(PageControls ui) => [
     _label('Extended planning tools', weight: FontWeight.w500),
     _label('Compare and organize upcoming stays', size: 12, color: muted),
   ]),
-  _button(
-    'Try Plus · Demo upgrade',
-    () => ui.act('Try Plus · Demo upgrade', 'upgrade'),
-  ),
-  _button('Continue with free', () => ui.act('Continue with free')),
+  _button('Try Plus', () => ui.act('Try Plus', 'upgrade')),
+  _button('Continue with free', () => ui.act('Continue with free', 'profile')),
 ];
 
 List<Widget> _upgradeHeader(PageControls ui) => [
@@ -179,15 +145,12 @@ List<Widget> _upgradeBody(PageControls ui) => [
     color: muted,
   ),
   _panel([
-    _label('Prototype checkout', weight: FontWeight.w500),
+    _label('Simulated checkout', weight: FontWeight.w500),
     _label(
-      'This confirms a simulated upgrade. No payment details are collected and you won’t be charged.',
+      'This course project does not take payments. Confirming turns on Plus for your account without a charge.',
     ),
   ], color: softGreen),
-  _button(
-    'Confirm demo upgrade',
-    () => ui.act('Confirm demo upgrade', 'demo-payment-response'),
-  ),
+  _button('Confirm upgrade', () => ui.act('Confirm upgrade')),
   _button('Cancel', () => ui.act('Cancel', 'premium')),
 ];
 
@@ -203,7 +166,7 @@ List<Widget> _upgradeerrorBody(PageControls ui) => [
     _label('We couldn’t complete the request. Please try again.'),
   ], color: softGreen),
   _button('Try again', () => ui.act('Try again', 'upgrade')),
-  _button('Keep the free plan', () => ui.act('Keep the free plan')),
+  _button('Keep the free plan', () => ui.act('Keep the free plan', 'profile')),
 ];
 
 List<Widget> _upgradedHeader(PageControls ui) => [
@@ -213,7 +176,7 @@ List<Widget> _upgradedHeader(PageControls ui) => [
 ];
 
 List<Widget> _upgradedBody(PageControls ui) => [
-  _button('Continue planning', () => ui.act('Continue planning')),
+  _button('Continue planning', () => ui.act('Continue planning', 'explore')),
   _button('View all trips', () => ui.act('View all trips', 'trips')),
   _button('Downloaded summaries', () => ui.act('Downloaded summaries')),
   _button(
@@ -231,54 +194,23 @@ List<Widget> _subscriptionHeader(PageControls ui) => [
 List<Widget> _subscriptionBody(PageControls ui) => [
   _panel([
     _label('Offline summaries', weight: FontWeight.w500),
-    _label('View your actual saved copies', size: 12, color: muted),
-  ], onTap: () => ui.act('Offline summaries')),
+    _label('View your saved copies', size: 12, color: muted),
+  ], onTap: () => ui.act('Downloaded summaries')),
   _panel([
     _label('Your trips', weight: FontWeight.w500),
     _label('Compare and organize your saved plans', size: 12, color: muted),
   ], onTap: () => ui.act('Your trips', 'trips')),
   _button('Cancel Plus', () => ui.act('Cancel Plus', 'cancelplus')),
-  _button('Back to Profile', () => ui.act('Back to Profile')),
+  _button('Back to Profile', () => ui.act('Back to Profile', 'profile')),
 ];
 
-List<Widget> _profileplusHeader(PageControls ui) => [
-  _button('‹ Back', ui.back),
-  _label('Your profile', size: 26, weight: FontWeight.bold),
-  _label('CampReady Plus'),
-];
+List<Widget> _profileplusHeader(PageControls ui) => _profileHeader(ui);
 
-List<Widget> _profileplusBody(PageControls ui) => [
-  _panel([
-    _label('Name', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Name', 'John')),
-  ], color: softGreen),
-  _panel([
-    _label('Email', weight: FontWeight.w500),
-    _label(ui.noticeValue('Notice / Email', 'john.doe@example.com')),
-  ], color: softGreen),
-  _panel([
-    _label('Edit profile', weight: FontWeight.w500),
-    _label('Update your sample display name', size: 12, color: muted),
-  ], onTap: () => ui.act('Edit profile', 'editprofile')),
-  _panel([
-    _label('Manage membership', weight: FontWeight.w500),
-    _label('Plan and download multiple trips', size: 12, color: muted),
-  ], onTap: () => ui.act('Manage membership', 'subscription')),
-  _panel([
-    _label('Downloaded trips', weight: FontWeight.w500),
-    _label('View saved offline summaries', size: 12, color: muted),
-  ], onTap: () => ui.act('Downloaded trips')),
-  _panel([
-    _label('Notification preferences', weight: FontWeight.w500),
-    _label('Choose and save your preference', size: 12, color: muted),
-  ], onTap: () => ui.act('Notification preferences', 'preferences')),
-  _panel([
-    _label('About CampReady', weight: FontWeight.w500),
-    _label('Sources and prototype information', size: 12, color: muted),
-  ], onTap: () => ui.act('About CampReady', 'about')),
-  _button('Sign out', () => ui.act('Sign out', 'signout')),
-  _button('Explore', () => ui.act('Explore', 'explore')),
-];
+List<Widget> _profileplusBody(PageControls ui) => _profileBody(ui);
+
+List<Widget> _profileupdatedHeader(PageControls ui) => _profileHeader(ui);
+
+List<Widget> _profileupdatedBody(PageControls ui) => _profileBody(ui);
 
 List<Widget> _cancelplusHeader(PageControls ui) => [
   _back(ui),
@@ -288,13 +220,10 @@ List<Widget> _cancelplusHeader(PageControls ui) => [
 
 List<Widget> _cancelplusBody(PageControls ui) => [
   _label(
-    'Cancellation returns this demo to the free plan. Core campsite conditions and essential alerts stay available.',
+    'You return to the free plan. Core campsite conditions and push alerts stay available.',
     color: muted,
   ),
-  _button(
-    'Cancel membership',
-    () => ui.act('Cancel membership', 'pluscancelled'),
-  ),
+  _button('Cancel membership', () => ui.act('Cancel membership')),
   _button('Keep Plus', () => ui.act('Keep Plus', 'subscription')),
 ];
 
@@ -311,8 +240,8 @@ List<Widget> _pluscancelledBody(PageControls ui) => [
       'You can view existing trips. Adding another trip or refreshing downloads requires Plus.',
     ),
   ], color: softGreen),
-  _button('View trips', () => ui.act('View trips', 'trips')),
-  _button('Profile', () => ui.act('Profile')),
+  _button('View trips', () => ui.act('View trips')),
+  _button('Profile', () => ui.act('Profile', 'profile')),
 ];
 
 List<Widget> _aboutHeader(PageControls ui) => [
@@ -323,12 +252,15 @@ List<Widget> _aboutHeader(PageControls ui) => [
 
 List<Widget> _aboutBody(PageControls ui) => [
   _label(
-    'A California camping companion for finding campsites, checking conditions and sharing trip plans.',
+    'A California camping companion for finding campsites, checking conditions and planning trips with your group.',
     color: muted,
   ),
   _label(
-    'Course prototype · CSEN 268\nGroup 2 · Atishay Jain & Alexander Shirazi\n\nAll campsite conditions, fees and alerts shown here are sample data. Bookings and payments are simulated; accounts, saved campsites, trips and notifications use Firebase Auth / Firestore / FCM (campready-group2). Pass --dart-define=LOCAL_DEMO=true for an explicit on-device local preview instead.',
+    'CSEN 268 · Group 2 · Atishay Jain & Alexander Shirazi\n\n'
+    'Weather forecasts come live from Open-Meteo. Fire rules and closures are sample park advisories. '
+    'Bookings and the Plus upgrade are simulated and never charge you. '
+    'Accounts, trips and sharing use Firebase Auth and Cloud Firestore; trip alerts use Firebase Cloud Messaging.',
     color: muted,
   ),
-  _button('Back to Profile', () => ui.act('Back to Profile')),
+  _button('Back to Profile', () => ui.act('Back to Profile', 'profile')),
 ];

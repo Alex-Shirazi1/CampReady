@@ -1,14 +1,6 @@
-// In-memory backend for explicit local previews and tests.
-// Same collections and shapes as the Firestore implementation, so
-// switching backends changes storage, not behaviour. Nothing here
-// leaves the device and nothing is synced.
-//
-// The one seeded account is the sample account from the submitted
-// Figma design (john.doe@example.com / campready123, display name
-// "John Doe"). It exists only so the Figma "signed-in" sample screens
-// can be exercised in local mode; it is not a real account and no
-// real sign-in goes through it. Passwords are stored only as a
-// simple non-reversible hash, local mode only.
+// In-memory backend for tests and the LOCAL_DEMO preview. Same shapes as
+// Firestore; nothing leaves the device. The seeded john.doe@example.com
+// account backs the demo-only sample screens.
 
 import 'models.dart';
 
@@ -34,7 +26,7 @@ class LocalStore {
 
   final Map<String, _LocalAccount> _usersByEmail = {};
   final Map<String, AppUser> _profiles = {};
-  final Map<String, bool> alertPreferences = {};
+  final Map<String, Map<String, dynamic>> userSettings = {};
   final Map<String, Map<String, SavedCampsite>> _saved = {};
   final Map<String, TripRecord> _trips = {};
   final Map<String, Map<String, Map<String, String>>> responses = {};

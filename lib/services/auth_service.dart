@@ -1,11 +1,4 @@
-// Authentication for CampReady.
-//
-// Configured mode: Firebase Auth (email/password), exactly as taught
-// in the CSEN 268 "Email Authentication" deck — sign-up, sign-in,
-// forgot-password, and an auth-state stream.
-// Explicit local demo mode: the same API backed by
-// LocalStore, labelled local mode in the UI. Local accounts live only
-// on this device and are never synced.
+// Email/password sign-in with Firebase Auth, or LocalStore in local mode.
 
 import 'dart:async';
 
@@ -195,9 +188,19 @@ class AuthService {
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
+      case 'invalid-login-credentials':
         return 'Check your email and password';
+      case 'too-many-requests':
+        return 'Too many attempts. Wait a minute and try again.';
+      case 'network-request-failed':
+        return 'No connection. Check your internet and try again.';
+      case 'user-disabled':
+        return 'This account is disabled.';
       default:
-        return e.message ?? 'Sign-in failed';
+        final message = e.message?.trim() ?? '';
+        return message.length > 8
+            ? message
+            : 'Sign-in failed. Check your email and password, then try again.';
     }
   }
 }

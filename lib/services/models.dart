@@ -1,11 +1,6 @@
-// Plain data models for the First Integrations services layer.
-// These are backend-neutral: the same objects are produced by the
-// Firestore implementation and by the local in-memory fallback, so
-// the UI never branches on which backend is active.
+import '../models/stay.dart';
 
-/// Lowercases+trims emails, dropping empties and duplicates (first
-/// occurrence wins). Email identity in this app is case-insensitive;
-/// Firestore `arrayContains` and the trip read rule are not.
+/// Lowercases and trims emails, dropping empties and duplicates.
 List<String> normalizeEmails(Iterable<String> emails) {
   final seen = <String>{};
   final out = <String>[];
@@ -17,11 +12,7 @@ List<String> normalizeEmails(Iterable<String> emails) {
   return out;
 }
 
-/// Parses a stored timestamp that may be an ISO-8601 string (what
-/// [AppNotification.toMap] writes), a [DateTime], or a Firestore
-/// `Timestamp` (what a console-written doc may carry). Returns null
-/// instead of throwing on an unexpected shape, so one malformed doc
-/// does not fail a whole list read.
+/// Accepts an ISO string, a DateTime or a Firestore Timestamp.
 DateTime? parseStoredDateTime(Object? value) {
   if (value == null) return null;
   if (value is DateTime) return value;
@@ -34,14 +25,8 @@ DateTime? parseStoredDateTime(Object? value) {
   }
 }
 
-/// A signed-in account. [uid] is the Firebase UID when configured,
-/// or a `local_…` id in local mode.
 class AppUser {
-  const AppUser({
-    required this.uid,
-    required this.email,
-    this.displayName,
-  });
+  const AppUser({required this.uid, required this.email, this.displayName});
 
   final String uid;
   final String email;
@@ -55,9 +40,6 @@ class AppUser {
 
   Map<String, dynamic> toMap() => {
     'uid': uid,
-    // Emails are stored lowercased+trimmed everywhere: the Firestore
-    // shared-trip query (arrayContains) and the read rule are both
-    // case-sensitive, so a mixed-case stored email would hide a trip.
     'email': email.trim().toLowerCase(),
     'displayName': displayName,
   };
@@ -67,10 +49,19 @@ class AppUser {
     email: (map['email'] as String? ?? '').trim().toLowerCase(),
     displayName: map['displayName'] as String?,
   );
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppUser &&
+      other.uid == uid &&
+      other.email == email &&
+      other.displayName == displayName;
+
+  @override
+  int get hashCode => Object.hash(uid, email, displayName);
 }
 
-/// A campsite the user saved. Stored at
-/// `users/{uid}/savedCampsites/{siteId}` in Firestore.
+/// Stored at users/{uid}/savedCampsites/{siteId}.
 class SavedCampsite {
   const SavedCampsite({
     required this.siteId,
@@ -95,9 +86,7 @@ class SavedCampsite {
   );
 }
 
-/// A trip plan. Stored in the top-level `trips` collection in
-/// Firestore so an invited user can read it: [ownerUid] owns it and
-/// [sharedWithEmails] lists invitees by email.
+/// Stored at trips/{tripId}. Invitees are listed by email.
 class TripRecord {
   const TripRecord({
     required this.id,
@@ -105,6 +94,8 @@ class TripRecord {
     required this.ownerEmail,
     required this.site,
     required this.dates,
+    this.siteId = '',
+    this.stay,
     this.status = 'Request pending',
     this.alertsEnabled = true,
     this.downloadedDates = '',
@@ -112,11 +103,18 @@ class TripRecord {
     this.invitation = 'No invitations yet',
   });
 
+  static String idFor(String ownerUid, String siteName) =>
+      'trip_${ownerUid}_${siteName.replaceAll(' ', '_')}';
+
   final String id;
   final String ownerUid;
   final String ownerEmail;
   final String site;
+  final String siteId;
+
+  /// Display label. Older trips only have this text, not [stay].
   final String dates;
+  final Stay? stay;
   final String status;
   final bool alertsEnabled;
   final String downloadedDates;
@@ -124,7 +122,7 @@ class TripRecord {
   final String invitation;
 
   TripRecord copyWith({
-    String? dates,
+    Stay? stay,
     String? status,
     bool? alertsEnabled,
     String? downloadedDates,
@@ -135,7 +133,9 @@ class TripRecord {
     ownerUid: ownerUid,
     ownerEmail: ownerEmail,
     site: site,
-    dates: dates ?? this.dates,
+    siteId: siteId,
+    dates: stay?.label ?? dates,
+    stay: stay ?? this.stay,
     status: status ?? this.status,
     alertsEnabled: alertsEnabled ?? this.alertsEnabled,
     downloadedDates: downloadedDates ?? this.downloadedDates,
@@ -146,12 +146,11 @@ class TripRecord {
   Map<String, dynamic> toMap() => {
     'id': id,
     'ownerUid': ownerUid,
-    // Normalised at the model boundary (see fromMap): the create rule
-    // requires ownerEmail == the auth token email, and the shared query
-    // is case-sensitive, so stored emails must be lowercased+trimmed.
     'ownerEmail': ownerEmail.trim().toLowerCase(),
     'site': site,
+    'siteId': siteId,
     'dates': dates,
+    ...?stay?.toMap(),
     'status': status,
     'alertsEnabled': alertsEnabled,
     'downloadedDates': downloadedDates,
@@ -164,7 +163,9 @@ class TripRecord {
     ownerUid: map['ownerUid'] as String? ?? '',
     ownerEmail: (map['ownerEmail'] as String? ?? '').trim().toLowerCase(),
     site: map['site'] as String? ?? '',
+    siteId: map['siteId'] as String? ?? '',
     dates: map['dates'] as String? ?? '',
+    stay: Stay.fromMap(map),
     status: map['status'] as String? ?? 'Request pending',
     alertsEnabled: map['alertsEnabled'] as bool? ?? true,
     downloadedDates: map['downloadedDates'] as String? ?? '',
@@ -176,12 +177,9 @@ class TripRecord {
   );
 }
 
-/// One condition-change / invitation notification. A trip notification
-/// is stored once at `trips/{tripId}/notifications/{id}` in Firestore
-/// (readable by the owner and by invitees) and the owner's own copy
-/// at `users/{uid}/notifications/{id}`; FCM foreground saves also go
-/// to the signed-in user's own list. Delivered in-app (via FCM when
-/// configured, via the local stream otherwise).
+/// One trip update or invitation. Trip-wide copies live at
+/// trips/{tripId}/notifications/{id}; the owner's copy at
+/// users/{uid}/notifications/{id}.
 class AppNotification {
   const AppNotification({
     required this.id,
@@ -200,13 +198,9 @@ class AppNotification {
   final String? tripId;
   final String? site;
 
-  /// Set on a trip notification meant for one invitee (the invitation
-  /// notice); null means everyone who can read the trip.
+  /// Set when the notice is for one invitee only.
   final String? recipientEmail;
   final bool read;
-
-  /// Null in local mode when no timestamp was supplied; Firestore
-  /// records carry an ISO-8601 string.
   final DateTime? createdAt;
 
   AppNotification copyWith({bool? read}) => AppNotification(
@@ -231,17 +225,21 @@ class AppNotification {
     'createdAt': createdAt?.toIso8601String(),
   };
 
-  factory AppNotification.fromMap(Map<String, dynamic> map) =>
-      AppNotification(
-        id: map['id'] as String? ?? '',
-        title: map['title'] as String? ?? '',
-        body: map['body'] as String? ?? '',
-        tripId: map['tripId'] as String?,
-        site: map['site'] as String?,
-        recipientEmail: (map['recipientEmail'] as String?)
-            ?.trim()
-            .toLowerCase(),
-        read: map['read'] as bool? ?? false,
-        createdAt: parseStoredDateTime(map['createdAt']),
-      );
+  factory AppNotification.fromMap(Map<String, dynamic> map) => AppNotification(
+    id: map['id'] as String? ?? '',
+    title: map['title'] as String? ?? '',
+    body: map['body'] as String? ?? '',
+    tripId: map['tripId'] as String?,
+    site: map['site'] as String?,
+    recipientEmail: (map['recipientEmail'] as String?)?.trim().toLowerCase(),
+    read: map['read'] as bool? ?? false,
+    createdAt: parseStoredDateTime(map['createdAt']),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppNotification && other.id == id && other.read == read;
+
+  @override
+  int get hashCode => Object.hash(id, read);
 }

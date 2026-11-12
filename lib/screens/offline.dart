@@ -12,10 +12,7 @@ List<Widget> _offlineBody(PageControls ui) => [
     _label('Reconnect to refresh weather and park advisories.'),
   ], color: softGreen),
   _button('Open downloaded trip', () => ui.act('Open downloaded trip')),
-  _button(
-    'Try connection again',
-    () => ui.act('Try connection again', 'loading'),
-  ),
+  _button('Try connection again', () => ui.act('Try connection again')),
 ];
 
 List<Widget> _downloadedHeader(PageControls ui) => [
@@ -27,31 +24,26 @@ List<Widget> _downloadedHeader(PageControls ui) => [
 List<Widget> _downloadedBody(PageControls ui) => [
   _panel([
     _label('Campsite', weight: FontWeight.w500),
-    _label(ui.display('Redwood Grove')),
+    _label('${ui.campsite.name} · ${ui.campsite.area}'),
   ], color: softGreen),
   _panel([
     _label('Downloaded dates', weight: FontWeight.w500),
     _label(
-      ui.noticeValue(
-        'Notice / Downloaded dates',
-        'Saved dates unavailable. Refresh this download.',
-      ),
+      (ui.trip?.record.downloadedDates.isNotEmpty ?? false)
+          ? ui.trip!.record.downloadedDates
+          : 'No offline copy saved',
     ),
   ], color: softGreen),
   _panel([
-    _label(
-      'Safety information',
-      weight: FontWeight.w500,
-      color: const Color(0xFF8A5100),
-    ),
+    _label('Safety information', weight: FontWeight.w500, color: _warning),
     _label(
       'Reconnect and check weather, fire rules and access before travel. This snapshot is not a current conditions report.',
-      color: const Color(0xFF8A5100),
+      color: _warning,
     ),
-  ], color: const Color(0xFFFFF2D8)),
-  _button('Refresh while online', () => ui.act('Refresh while online')),
+  ], color: _warningSurface),
+  _button('Refresh while online', () => ui.act('Refresh download')),
   _button('Delete downloaded copy', () => ui.act('Delete downloaded copy')),
-  _button('All downloads', () => ui.act('All downloads')),
+  _button('All downloads', () => ui.act('Downloaded summaries')),
 ];
 
 List<Widget> _loadingHeader(PageControls ui) => [
@@ -79,6 +71,6 @@ List<Widget> _serviceerrorBody(PageControls ui) => [
     _label('Your saved plans are safe', weight: FontWeight.w500),
     _label('The campsite service is temporarily unavailable.'),
   ], color: softGreen),
-  _button('Try again', () => ui.act('Try again', 'loading')),
-  _button('View saved trips', () => ui.act('View saved trips')),
+  _button('Try again', () => ui.act('Try connection again')),
+  _button('View saved trips', () => ui.act('View trips')),
 ];
