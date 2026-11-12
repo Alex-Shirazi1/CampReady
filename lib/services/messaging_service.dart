@@ -81,10 +81,8 @@ class MessagingService {
     _opened ??= FirebaseMessaging.onMessageOpenedApp.listen(
       handleOpenedMessage,
     );
-    // Token refresh: firebase_messaging 17 deprecated onTokenRefresh;
-    // onRegistered emits the token whenever registration changes,
-    // including a refresh. When a new token arrives for the signed-in
-    // account, save it and remove the old one.
+    // onRegistered also fires when the token refreshes: save the new
+    // token and drop the old one.
     _tokenRefresh ??= FirebaseMessaging.instance.onRegistered.listen((
       newToken,
     ) async {
@@ -104,10 +102,8 @@ class MessagingService {
     });
   }
 
-  /// Handles a tapped background notification: records it like a
-  /// foreground message and emits the raw message so the app can
-  /// route to its trip. Kept separate from the listener so tests can
-  /// drive it with a constructed [RemoteMessage].
+  /// A tapped background notification: recorded and passed on so the
+  /// app can open its trip.
   void handleOpenedMessage(RemoteMessage message) {
     final notification = AppNotification(
       id: message.messageId ?? _store.nextId('fcm-opened'),
@@ -255,26 +251,8 @@ class MessagingService {
     await _firestore.saveFcmToken(uid, token);
   }
 
-  /// Delivers a condition-change notification to the owner and to
-  /// every invitee, in both modes, with one write per destination:
-  ///
-  /// * the owner's own copy goes to their own notifications list;
-  /// * one trip-scoped copy goes to `trips/{tripId}/notifications`,
-  ///   which the owner and every invitee can read.
-  ///
-  /// The old implementation looked each invitee up in the local
-  /// in-memory store (`_store.findUser`), which is empty in Firebase
-  /// mode, and then wrote into the invitee's `users/{uid}` subtree,
-  /// which the rules deny. Trip-scoped delivery needs neither a uid
-  /// lookup nor a cross-user write, and it reaches invitees who sign
-  /// up after being shared with. [sharedWithEmails] is kept so the
-  /// caller still declares the recipients; delivery itself is by trip
-  /// membership, so a stale or partial list cannot silently drop an
-  /// invitee who is on the trip.
-  ///
-  /// [notifyOwner] is the owner's own alert preference. It covers only
-  /// the owner's copy: invitees still get the trip-scoped copy, and
-  /// each invitee's own preference decides whether they see alerts.
+  /// Saves a trip update once on the trip, where the owner and every
+  /// invitee can read it, plus the owner's own copy when [notifyOwner].
   Future<AppNotification> notifyConditionChange({
     required String ownerUid,
     required String ownerEmail,
@@ -300,13 +278,8 @@ class MessagingService {
     return notification;
   }
 
-  /// Notifies the invitee that they were added to a trip. One
-  /// trip-scoped write (see [notifyConditionChange]): the invitee
-  /// reads it from the trip, with no uid lookup and no cross-user
-  /// write. It is addressed to [inviteeEmail], so other invitees on
-  /// the same trip do not see it as their own invitation. The owner
-  /// gets no copy, not even in this session's in-app stream: it is
-  /// their own trip, and the notice is written to the invitee.
+  /// Tells the invitee they were added to a trip. Addressed to their
+  /// email so other people on the trip don't see it.
   Future<AppNotification> notifyTripShared({
     required String ownerUid,
     required String ownerEmail,

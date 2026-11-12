@@ -1,7 +1,5 @@
-// The CampReady services container for First Integrations.
-// One shared LocalStore backs all three services in local mode; in
-// configured mode the same services talk to Firebase Auth, Cloud
-// Firestore and Firebase Cloud Messaging.
+// Auth, Firestore and Messaging services, backed by Firebase or, in
+// local mode, by one shared in-memory LocalStore.
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
