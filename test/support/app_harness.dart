@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:campready/app.dart';
+import 'package:campready/models/stay.dart';
 import 'package:campready/repositories/location_repository.dart';
 import 'package:campready/repositories/photo_repository.dart';
 import 'package:campready/repositories/weather_repository.dart';
@@ -152,4 +153,48 @@ Future<(CampReadyServices, AppUser)> signedIn([
     displayName: name,
   );
   return (services, user);
+}
+
+/// Owner with one trip, shared with a friend who also shares one back.
+Future<CampReadyServices> seeded() async {
+  final services = CampReadyServices.local();
+  final friend = await services.auth.signUp(
+    email: 'friend@example.com',
+    password: 'campready123',
+  );
+  await services.firestore.createTrip(
+    TripRecord(
+      id: TripRecord.idFor(friend.uid, 'Sunset Ridge'),
+      ownerUid: friend.uid,
+      ownerEmail: friend.email,
+      site: 'Sunset Ridge',
+      siteId: 'sunset-ridge',
+      dates: 'Dec 4–6, 2026',
+      stay: Stay(DateTime(2026, 12, 4), DateTime(2026, 12, 6)),
+      sharedWithEmails: const ['owner@example.com'],
+    ),
+  );
+  await services.auth.signOut();
+  final owner = await services.auth.signUp(
+    email: 'owner@example.com',
+    password: 'campready123',
+    displayName: 'Owner',
+  );
+  await services.firestore.createTrip(
+    TripRecord(
+      id: TripRecord.idFor(owner.uid, 'Redwood Grove'),
+      ownerUid: owner.uid,
+      ownerEmail: owner.email,
+      site: 'Redwood Grove',
+      siteId: 'redwood-grove',
+      dates: 'Dec 11–13, 2026',
+      stay: Stay(DateTime(2026, 12, 11), DateTime(2026, 12, 13)),
+      downloadedDates: 'Dec 11–13, 2026',
+    ),
+  );
+  await services.firestore.saveCampsite(
+    owner.uid,
+    const SavedCampsite(siteId: 'redwood-grove', name: 'Redwood Grove'),
+  );
+  return services;
 }
