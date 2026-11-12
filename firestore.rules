@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    match /users/{uid}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+    match /trips/{tripId} {
+      function owner() { return signedIn() && resource.data.ownerUid == request.auth.uid; }
+      function invited() {
+        return signedIn() && request.auth.token.email in resource.data.get('sharedWithEmails', []);
+      }
+      allow read: if owner() || invited();
+      // Trip ids are trip_<ownerUid>_<site>; binding the id to the
+      // creator's uid stops another account from pre-creating (squatting)
+      // someone else's trip id and blocking their booking.
+      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerEmail == request.auth.token.email
+        && request.resource.data.id == tripId
+        && tripId.matches('trip_' + request.auth.uid + '_.+')
+        && !exists(/databases/$(database)/documents/trips/$(tripId));
+      // Create-only: set() on an existing doc is evaluated as an UPDATE,
+      // so !exists() above never sees a second createTrip. createTrip
+      // writes a server-timestamp createdAt and createdAt is immutable
+      // here, so a second create is denied instead of overwriting the
+      // trip and wiping its shares. Field updates (dates, share, revoke)
+      // never touch createdAt.
+      allow update: if owner()
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.ownerEmail == resource.data.ownerEmail
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null);
+      allow delete: if owner();
+      // Trip notifications: one write per trip event, readable by the
+      // owner and by invitees. This is the invitee-delivery channel:
+      // the owner writes here (never into another account's users/
+      // subtree, which the users rule denies), and invitees read the
+      // trip they were invited to. No per-invitee uid lookup is needed.
+      match /notifications/{notifId} {
+        function tripData() { return get(/databases/$(database)/documents/trips/$(tripId)).data; }
+        function tripOwner() { return signedIn() && tripData().ownerUid == request.auth.uid; }
+        function tripInvitee() {
+          return signedIn() && request.auth.token.email in tripData().get('sharedWithEmails', []);
+        }
+        allow read: if tripOwner() || tripInvitee();
+        allow create, delete: if tripOwner();
+        allow update: if false;
+      }
+      match /responses/{uid} {
+        function trip() { return get(/databases/$(database)/documents/trips/$(tripId)).data; }
+        function isOwner() { return signedIn() && trip().ownerUid == request.auth.uid; }
+        function isInvitee() {
+          return signedIn() && request.auth.uid == uid
+            && request.auth.token.email in trip().get('sharedWithEmails', []);
+        }
+        allow read: if isOwner() || isInvitee();
+        allow create, update: if isInvitee()
+          && request.resource.data.keys().hasOnly(['email', 'status'])
+          && request.resource.data.email == request.auth.token.email
+          && request.resource.data.status in ['accepted', 'declined'];
+        allow delete: if isOwner();
+      }
+    }
+  }
+}

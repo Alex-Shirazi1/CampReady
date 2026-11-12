@@ -160,7 +160,11 @@ List<Widget> _yourCampingGroupBody(PageControls ui) => [
 List<Widget> _youReInvitedHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('You’re invited', size: 26, weight: FontWeight.bold),
-  _label('Recipient preview · View-only access to this trip.'),
+  _label(
+    ui.backendMode == 'firebase'
+        ? 'View-only access to the shared trip.'
+        : 'Recipient preview · View-only access to this trip.',
+  ),
 ];
 
 List<Widget> _youReInvitedBody(PageControls ui) => [
@@ -179,13 +183,21 @@ List<Widget> _youReInvitedBody(PageControls ui) => [
     _label('Try expired link', weight: FontWeight.w500),
     _label('Simulate an expired invitation', size: 12, color: muted),
   ], onTap: () => ui.act('Try expired link', 'this-invitation-is-unavailable')),
-  _button('Return to owner', () => ui.act('Return to owner')),
+  _button(
+    ui.backendMode == 'firebase' ? 'Return to trips' : 'Return to owner',
+    () =>
+        ui.act(ui.backendMode == 'firebase' ? 'View trips' : 'Return to owner'),
+  ),
 ];
 
 List<Widget> _youJoinedTheTripHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('You joined the trip', size: 26, weight: FontWeight.bold),
-  _label('Recipient preview · Owner’s current shared plan.'),
+  _label(
+    ui.backendMode == 'firebase'
+        ? 'Owner’s current shared plan.'
+        : 'Recipient preview · Owner’s current shared plan.',
+  ),
 ];
 
 List<Widget> _youJoinedTheTripBody(PageControls ui) => [
@@ -202,7 +214,11 @@ List<Widget> _youJoinedTheTripBody(PageControls ui) => [
     _label('View conditions', weight: FontWeight.w500),
     _label('Check current conditions before leaving', size: 12, color: muted),
   ], onTap: () => ui.act('View conditions')),
-  _button('Return to owner', () => ui.act('Return to owner')),
+  _button(
+    ui.backendMode == 'firebase' ? 'Return to trips' : 'Return to owner',
+    () =>
+        ui.act(ui.backendMode == 'firebase' ? 'View trips' : 'Return to owner'),
+  ),
 ];
 
 List<Widget> _invitationDeclinedHeader(PageControls ui) => [
@@ -212,11 +228,16 @@ List<Widget> _invitationDeclinedHeader(PageControls ui) => [
 ];
 
 List<Widget> _invitationDeclinedBody(PageControls ui) => [
-  _button('Return to owner', () => ui.act('Return to owner')),
   _button(
-    'Send another invitation',
-    () => ui.act('Send another invitation', 'share'),
+    ui.backendMode == 'firebase' ? 'Return to trips' : 'Return to owner',
+    () =>
+        ui.act(ui.backendMode == 'firebase' ? 'View trips' : 'Return to owner'),
   ),
+  if (ui.backendMode != 'firebase')
+    _button(
+      'Send another invitation',
+      () => ui.act('Send another invitation', 'share'),
+    ),
 ];
 
 List<Widget> _thisInvitationIsUnavailableHeader(PageControls ui) => [
@@ -227,10 +248,13 @@ List<Widget> _thisInvitationIsUnavailableHeader(PageControls ui) => [
 
 List<Widget> _thisInvitationIsUnavailableBody(PageControls ui) => [
   _button('View your trips', () => ui.act('View your trips', 'trips')),
-  _button(
-    'Ask owner to invite again',
-    () => ui.act('Ask owner to invite again'),
-  ),
+  if (ui.backendMode == 'firebase')
+    _label('Ask the trip owner to invite you again.')
+  else
+    _button(
+      'Ask owner to invite again',
+      () => ui.act('Ask owner to invite again'),
+    ),
 ];
 
 List<Widget> _invitationNotSentHeader(PageControls ui) => [

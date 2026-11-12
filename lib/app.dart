@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
@@ -7,21 +8,200 @@ import 'package:go_router/go_router.dart';
 import 'theme.dart';
 
 import 'screens.dart';
+import 'services/services.dart';
 import 'campsite_map.dart';
 
-/// Session-only sample state. No account, booking, email or charge is sent.
 class TripDetails {
   String dates = 'Oct 30–Nov 1, 2026', status = 'Request pending';
   String invitation = 'No invitations yet', downloadedDates = '';
 }
 
 class DemoState {
-  bool signedIn = false, saved = false, plus = false, alerts = true;
+  DemoState({CampReadyServices? services})
+    : services = services ?? CampReadyServices.local();
+
+  /// First Integrations services (Auth / Firestore / FCM). In local
+  /// mode these are backed by an in-memory store; in configured mode
+  /// by Firebase. The UI uses this API either way.
+  final CampReadyServices services;
+
+  /// True when an account is signed in through AuthService. Tests and
+  /// the guide preview can also set it directly; setting it true
+  /// without an account keeps the previous profile fields.
+  bool get signedIn =>
+      services.auth.currentUser != null ||
+      (!services.isFirebaseConfigured && _signedIn);
+  set signedIn(bool value) {
+    _signedIn = value;
+  }
+
+  final records = <String, TripRecord>{};
+  String? accountUid;
+  String? syncError;
+  final changes = StreamController<void>.broadcast();
+  int _loadVersion = 0;
+
+  void changed() {
+    if (!changes.isClosed) changes.add(null);
+  }
+
+  void clearAccount() {
+    _loadVersion++;
+    accountUid = null;
+    _signedIn = false;
+    name = '';
+    email = '';
+    plus = false;
+    alerts = true;
+    bookingAlerts = null;
+    bookingDates = null;
+    editingTrip = false;
+    savedCampsiteIds.clear();
+    trips.clear();
+    details.clear();
+    records.clear();
+    notifications.clear();
+    syncError = null;
+    changed();
+  }
+
+  Future<void> loadAccount() async {
+    final user = services.auth.currentUser;
+    if (user == null) return;
+    if (accountUid != user.uid) clearAccount();
+    accountUid = user.uid;
+    name = user.displayName ?? '';
+    email = user.email;
+    final version = ++_loadVersion;
+    final saved = await services.firestore.savedCampsites(user.uid);
+    final loadedTrips = await services.firestore.tripsForUser(
+      user.uid,
+      user.email,
+    );
+    final notes = await services.firestore.notifications(
+      user.uid,
+      email: user.email,
+    );
+    final savedAlerts = await services.firestore.alertPreference(user.uid);
+    final visibleTrips = <TripRecord>[];
+    final declinedTripIds = <String>{};
+    for (final record in loadedTrips) {
+      if (record.ownerUid != user.uid) {
+        // A denied invitation-response read must not hide the trip
+        // itself; the invitee can still see it and respond.
+        Map<String, String>? response;
+        try {
+          response = await services.firestore.invitationResponse(
+            record.id,
+            user.uid,
+          );
+        } catch (_) {
+          response = null;
+        }
+        if (response?['status'] == 'declined') {
+          declinedTripIds.add(record.id);
+          continue;
+        }
+        visibleTrips.add(
+          record.copyWith(
+            invitation: response?['status'] == 'accepted'
+                ? 'You joined the trip'
+                : 'Invitation pending · ${user.email}',
+          ),
+        );
+      } else {
+        List<Map<String, String>> responses;
+        try {
+          responses = await services.firestore.invitationResponses(
+            record.id,
+          );
+        } catch (_) {
+          responses = const [];
+        }
+        final current = responses.where(
+          (r) => record.sharedWithEmails.contains(r['email']),
+        );
+        visibleTrips.add(
+          current.isEmpty
+              ? record
+              : record.copyWith(
+                  invitation: current
+                      .map((r) => "${r['email']}: ${r['status']}")
+                      .join(' · '),
+                ),
+        );
+      }
+    }
+    if (version != _loadVersion || services.auth.currentUser?.uid != user.uid) {
+      return;
+    }
+    final grouped = <String, List<TripRecord>>{};
+    for (final record in visibleTrips) {
+      grouped.putIfAbsent(record.site, () => []).add(record);
+    }
+    final conflicts = grouped.entries.where((entry) => entry.value.length > 1);
+    syncError = conflicts.isEmpty
+        ? null
+        : 'More than one trip was shared for ${conflicts.map((e) => e.key).join(', ')}. '
+              'Resolve the duplicate with the owner; no trip was overwritten.';
+    savedCampsiteIds
+      ..clear()
+      ..addAll(saved.map((site) => site.siteId));
+    trips.clear();
+    records.clear();
+    details.clear();
+    for (final entry in grouped.entries) {
+      if (entry.value.length != 1) continue;
+      final record = entry.value.single;
+      trips.add(record.site);
+      records[record.site] = record;
+      details[record.site] = TripDetails()
+        ..dates = record.dates
+        ..status = record.status
+        ..invitation = record.invitation
+        ..downloadedDates = record.downloadedDates;
+    }
+    alerts = savedAlerts;
+    notifications
+      ..clear()
+      // A declined invitation hides the trip, so it hides that trip's
+      // notifications too (the invitee is still on sharedWithEmails, so
+      // the trip-notification read itself is still allowed).
+      ..addAll(notes.where((n) => !declinedTripIds.contains(n.tripId)));
+    notifications.sort(
+      (a, b) => (b.createdAt ?? DateTime(1970)).compareTo(
+        a.createdAt ?? DateTime(1970),
+      ),
+    );
+    changed();
+  }
+
+  bool _signedIn = false;
+  bool plus = false, alerts = true;
   bool editingTrip = false;
   bool? bookingAlerts;
   String? bookingDates;
   String destination = '';
-  String site = 'Redwood Grove', name = 'John', email = 'john.doe@example.com';
+  String site = 'Redwood Grove';
+  // Profile fields. Empty until an account signs in; populated from
+  // AuthService / Firestore, never from a hardcoded sample name.
+  String name = '', email = '';
+  // Campsites saved through FirestoreService (local store in local
+  // mode), keyed by site id. `saved` is the per-site view of this set.
+  final Set<String> savedCampsiteIds = {};
+  bool get saved => savedCampsiteIds.contains(site);
+  set saved(bool value) {
+    if (value) {
+      savedCampsiteIds.add(site);
+    } else {
+      savedCampsiteIds.remove(site);
+    }
+  }
+
+  /// Notification records delivered for this account (MessagingService
+  /// / Firestore), newest first. Empty until a condition changes or an
+  /// invitation arrives; never hardcoded alert panels.
+  final List<AppNotification> notifications = [];
   final details = <String, TripDetails>{};
   TripDetails get trip => details[site] ?? TripDetails();
   final Set<String> trips = {};
@@ -38,15 +218,17 @@ class CampReady extends StatefulWidget {
     super.key,
     this.initialRoute = '/splash',
     this.initialState,
+    this.services,
   });
   final String initialRoute;
   final DemoState? initialState;
+  final CampReadyServices? services;
   @override
   State<CampReady> createState() => _CampReadyState();
 }
 
 class _CampReadyState extends State<CampReady> {
-  late final demo = widget.initialState ?? DemoState();
+  late final demo = widget.initialState ?? DemoState(services: widget.services);
   late final router = GoRouter(
     initialLocation: widget.initialRoute,
     routes: [
@@ -100,8 +282,79 @@ class _CampReadyState extends State<CampReady> {
       ),
     ),
   );
+  StreamSubscription<AppUser?>? authSubscription;
+  StreamSubscription<AppNotification>? messageSubscription;
+  StreamSubscription<RemoteMessage>? openedMessageSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    authSubscription = demo.services.auth.authStateChanges.listen((user) {
+      final messaging = demo.services.messaging;
+      if (messaging.registeredUid != null &&
+          messaging.registeredUid != user?.uid) {
+        unawaited(
+          messaging.detachUser().catchError((Object error) {
+            messaging.status = 'Push cleanup failed; retry notification setup';
+          }),
+        );
+      }
+      if (user == null && demo.accountUid != null) demo.clearAccount();
+      if (user != null && user.uid != demo.accountUid) restoreAccount();
+    });
+    messageSubscription = demo.services.messaging.onMessage.listen((note) {
+      final uid = demo.services.auth.currentUser?.uid;
+      if (uid == null) return;
+      if (demo.services.isFirebaseConfigured &&
+          demo.services.messaging.registeredUid != uid) {
+        return;
+      }
+      if (!demo.notifications.any((n) => n.id == note.id)) {
+        demo.notifications.insert(0, note);
+        demo.changed();
+      }
+    });
+    // A tapped background notification opens its trip, when the trip
+    // is one this account can see.
+    openedMessageSubscription = demo.services.messaging.onMessageOpened
+        .listen((message) {
+          final siteName = message.data['site'] as String?;
+          if (siteName == null || !demo.trips.contains(siteName)) return;
+          demo.site = siteName;
+          router.goNamed(
+            siteName == 'Sunset Ridge' ? 'ridgetrip' : 'trip',
+            extra: siteName,
+          );
+        });
+    if (demo.services.auth.currentUser != null) restoreAccount();
+  }
+
+  Future<void> restoreAccount() async {
+    try {
+      await demo.loadAccount();
+      final user = demo.services.auth.currentUser;
+      if (user != null && demo.alerts) {
+        unawaited(
+          demo.services.messaging.restoreRegistration(user.uid).catchError((
+            Object error,
+          ) {
+            demo.services.messaging.status =
+                'Push registration could not be restored';
+          }),
+        );
+      }
+    } catch (_) {
+      demo.syncError =
+          'Could not load your saved data. Retry from your profile.';
+      demo.changed();
+    }
+  }
+
   @override
   void dispose() {
+    authSubscription?.cancel();
+    messageSubscription?.cancel();
+    openedMessageSubscription?.cancel();
     router.dispose();
     super.dispose();
   }
@@ -145,6 +398,8 @@ class _DesignScreenState extends State<DesignScreen>
   final fields = <String, String>{};
   final form = GlobalKey<FormState>();
   Timer? timer;
+  StreamSubscription<void>? stateSubscription;
+  bool busy = false;
   late String site;
   String? draftDates;
   bool? draftAlerts;
@@ -164,6 +419,9 @@ class _DesignScreenState extends State<DesignScreen>
   @override
   void initState() {
     super.initState();
+    stateSubscription = d.changes.stream.listen((_) {
+      if (mounted) setState(() {});
+    });
     site =
         widget.initialSite ??
         switch (route) {
@@ -178,6 +436,7 @@ class _DesignScreenState extends State<DesignScreen>
           'trip' => 'Redwood Grove',
           _ => d.site,
         };
+    selectSite(site);
     if (route.startsWith('splash')) {
       splashAnimation = AnimationController(
         vsync: this,
@@ -187,7 +446,9 @@ class _DesignScreenState extends State<DesignScreen>
     if (route.startsWith('splash') || route == 'loading') {
       timer = Timer(const Duration(milliseconds: 1400), () {
         if (mounted) {
-          context.goNamed(route == 'loading' ? 'explore' : 'welcome');
+          context.goNamed(
+            route == 'loading' || d.signedIn ? 'explore' : 'welcome',
+          );
         }
       });
     }
@@ -195,6 +456,7 @@ class _DesignScreenState extends State<DesignScreen>
 
   @override
   void dispose() {
+    stateSubscription?.cancel();
     splashAnimation?.dispose();
     timer?.cancel();
     super.dispose();
@@ -202,6 +464,7 @@ class _DesignScreenState extends State<DesignScreen>
 
   @override
   void goTo(String target) {
+    if (!mounted) return;
     if (target == 'profile' && d.plus) target = 'profileplus';
     if (target == 'trips' && d.trips.isEmpty) target = 'tripsempty';
     if (target == 'alerts' && (d.trips.isEmpty || !d.alerts)) {
@@ -227,8 +490,221 @@ class _DesignScreenState extends State<DesignScreen>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   bool get guest => !d.signedIn;
 
+  String get _ownerUid => d.services.auth.currentUser?.uid ?? 'local_guest';
+  String get _ownerEmail => d.services.auth.currentUser?.email ?? d.email;
+  String _tripIdFor(String siteName) =>
+      d.records[siteName]?.id ??
+      'trip_${_ownerUid}_${siteName.replaceAll(' ', '_')}';
+
+  TripRecord _tripRecord(String siteName) {
+    final details = d.details[siteName] ?? TripDetails();
+    final existing = d.records[siteName];
+    if (existing != null && existing.ownerUid != _ownerUid) {
+      throw StateError(
+        'Shared trips are view-only. Ask the owner to change this trip.',
+      );
+    }
+    return TripRecord(
+      id: _tripIdFor(siteName),
+      ownerUid: _ownerUid,
+      ownerEmail: _ownerEmail,
+      site: siteName,
+      dates: details.dates,
+      status: details.status,
+      alertsEnabled: d.alerts,
+      downloadedDates: details.downloadedDates,
+      sharedWithEmails: existing?.sharedWithEmails ?? [],
+      invitation: details.invitation,
+    );
+  }
+
+  Future<void> _persistTrip(String siteName) async {
+    final record = _tripRecord(siteName);
+    if (d.records.containsKey(siteName)) {
+      await d.services.firestore.updateTrip(record);
+    } else {
+      await d.services.firestore.createTrip(record);
+    }
+    d.records[siteName] = record;
+  }
+
+  Future<void> _notifyConditionChange(String title, String body) async {
+    // The owner's alert preference covers only the owner's own copy.
+    // Invitees are notified through the trip either way; each one's own
+    // preference decides whether their Alerts tab shows it.
+    try {
+      final note = await d.services.messaging.notifyConditionChange(
+        ownerUid: _ownerUid,
+        ownerEmail: _ownerEmail,
+        tripId: _tripIdFor(site),
+        site: site,
+        title: title,
+        body: body,
+        // The recipients: without this the service can only notify
+        // the owner, even though delivery itself is trip-scoped.
+        sharedWithEmails: d.records[site]?.sharedWithEmails ?? const [],
+        notifyOwner: d.alerts,
+      );
+      if (d.alerts && !d.notifications.any((n) => n.id == note.id)) {
+        d.notifications.insert(0, note);
+      }
+      d.changed();
+    } catch (_) {
+      if (mounted) {
+        notice('Trip saved, but its update notification could not be saved.');
+      }
+    }
+  }
+
+  Future<void> _enableNotifications() async {
+    final user = d.services.auth.currentUser;
+    if (user == null) return;
+    final granted = await d.services.messaging.requestPermission();
+    if (!granted) throw StateError(d.services.messaging.status);
+    final token = await d.services.messaging.getToken(user.uid);
+    if (token == null) {
+      throw StateError(
+        'Push registration failed. Check the messaging setup and retry.',
+      );
+    }
+  }
+
+  Future<void> _shareTrip(String inviteEmail) async {
+    _tripRecord(site);
+    await _persistTrip(site);
+    final updated = await d.services.firestore.shareTrip(
+      tripId: _tripIdFor(site),
+      email: inviteEmail,
+    );
+    d.records[site] = updated;
+    trip.invitation = updated.invitation;
+    // The invitation notification: the invitee learns about the share
+    // from the trip, not from a cross-user write (see MessagingService).
+    // A notification failure must not undo the share itself.
+    try {
+      await d.services.messaging.notifyTripShared(
+        ownerUid: _ownerUid,
+        ownerEmail: _ownerEmail,
+        inviteeEmail: inviteEmail,
+        tripId: _tripIdFor(site),
+        site: site,
+      );
+    } catch (_) {
+      if (mounted) {
+        notice(
+          'Trip shared, but the invitation notification could not be saved.',
+        );
+      }
+    }
+  }
+
+  Future<void> _applyAuthUser(AppUser user) async {
+    // A profile/load failure after a successful sign-in must not look
+    // like a failed sign-in: the account is signed in, so report the
+    // specific failure and keep going instead of throwing.
+    try {
+      await d.loadAccount();
+    } catch (_) {
+      d.syncError =
+          'Signed in, but your saved data could not be loaded. Retry from your profile.';
+      d.changed();
+    }
+    try {
+      await d.services.firestore.saveUserProfile(user);
+    } catch (_) {
+      d.syncError =
+          'Signed in, but your profile could not be saved to Firestore. Your trips are still available; retry from your profile.';
+      d.changed();
+    }
+    // Re-register for push on sign-in when alerts are on and permission
+    // was already granted. First-time permission is still requested
+    // from Save Preferences (a user gesture); this path never prompts.
+    if (d.alerts) {
+      unawaited(
+        d.services.messaging.restoreRegistration(user.uid).catchError((
+          Object error,
+        ) {
+          d.services.messaging.status =
+              'Push registration could not be restored';
+        }),
+      );
+    }
+  }
+
+  Future<void> _runAction(String label, String? destination) async {
+    if (busy) return;
+    final actionUid = d.services.auth.currentUser?.uid;
+    final oldTrips = Set<String>.of(d.trips);
+    final oldRecords = Map<String, TripRecord>.of(d.records);
+    final oldDetails = {
+      for (final entry in d.details.entries)
+        entry.key: TripDetails()
+          ..dates = entry.value.dates
+          ..status = entry.value.status
+          ..invitation = entry.value.invitation
+          ..downloadedDates = entry.value.downloadedDates,
+    };
+    final oldAlerts = d.alerts;
+    final oldBookingDates = d.bookingDates;
+    final oldBookingAlerts = d.bookingAlerts;
+    final oldEditingTrip = d.editingTrip;
+    setState(() => busy = true);
+    try {
+      await _performAction(label, destination);
+    } catch (error) {
+      if (d.services.auth.currentUser?.uid != actionUid) return;
+      d.trips
+        ..clear()
+        ..addAll(oldTrips);
+      d.records
+        ..clear()
+        ..addAll(oldRecords);
+      d.details
+        ..clear()
+        ..addAll(oldDetails);
+      d.alerts = oldAlerts;
+      d.bookingDates = oldBookingDates;
+      d.bookingAlerts = oldBookingAlerts;
+      d.editingTrip = oldEditingTrip;
+      if (mounted) {
+        notice(
+          error is TimeoutException
+              ? 'The connection timed out. A queued change may still save when you reconnect. Refresh before trying again.'
+              : error is StateError
+              ? error.message.toString()
+              : 'Could not complete this action. Check your connection and try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   @override
   void act(String label, [String? destination]) {
+    unawaited(_runAction(label, destination));
+  }
+
+  Future<void> _performAction(String label, String? destination) async {
+    if (d.records[site] != null &&
+        d.records[site]!.ownerUid != _ownerUid &&
+        [
+          'Edit dates',
+          'Use selected dates',
+          'Remove trip',
+          'Send invitation',
+          'Revoke invitation',
+          'Host accepts',
+          'Host declines',
+          'No response in 24 hours',
+          'Request again',
+          'Request to book · Demo',
+          'Retry request',
+        ].contains(label)) {
+      throw StateError(
+        'Shared trips are view-only. Ask the owner to change this trip.',
+      );
+    }
     if (label == '‹ Back' || label == 'Back') {
       back();
       return;
@@ -238,7 +714,6 @@ class _DesignScreenState extends State<DesignScreen>
           'Accept invitation',
           'Decline invitation',
           'Revoke invitation',
-          'Refresh shared plan',
           'Edit dates',
           'Remove trip',
           'Host accepts',
@@ -263,10 +738,24 @@ class _DesignScreenState extends State<DesignScreen>
       if (!(form.currentState?.validate() ?? true)) {
         return;
       }
-      d.signedIn = true;
-      d.name = fields['Your name'] ?? d.name;
-      d.email = fields['Email'] ?? d.email;
-      goTo('location');
+      // Real auth: Firebase Auth when configured, the local auth store
+      // otherwise. A failed sign-in lands on the Figma error screen.
+      final email = fields['Email'] ?? d.email;
+      final password = fields['Password'] ?? '';
+      final auth = d.services.auth;
+      try {
+        final user = label == 'Create account'
+            ? await auth.signUp(
+                email: email,
+                password: password,
+                displayName: fields['Your name'],
+              )
+            : await auth.signIn(email: email, password: password);
+        await _applyAuthUser(user);
+        if (mounted) goTo('location');
+      } on AuthException catch (error) {
+        if (mounted) notice(error.message);
+      }
       return;
     }
     if (label == 'Send reset link' ||
@@ -276,26 +765,57 @@ class _DesignScreenState extends State<DesignScreen>
         return;
       }
       if (label == 'Save profile') {
-        d.name = fields['Display name'] ?? d.name;
-        goTo('profilesaved');
+        final name = fields['Display name'] ?? d.name;
+        final user = d.services.auth.currentUser;
+        if (user != null) {
+          final updated = await d.services.auth.updateDisplayName(name);
+          if (updated != null) {
+            await d.services.firestore.saveUserProfile(updated);
+          }
+        }
+        d.name = name;
+        if (mounted) goTo('profilesaved');
       }
       if (label == 'Send reset link') {
-        goTo('resetsent');
+        await d.services.auth.sendPasswordReset(fields['Email'] ?? d.email);
+        if (mounted) goTo('resetsent');
       }
       if (label == 'Send invitation') {
-        trip.invitation =
-            'Invitation pending · ${fields['Invitation email'] ?? 'friend@example.com'}';
-        goTo('shared');
+        final inviteEmail = (fields['Invitation email'] ?? '')
+            .trim()
+            .toLowerCase();
+        if (inviteEmail == _ownerEmail.toLowerCase()) {
+          throw StateError('This is already your trip. Invite another person.');
+        }
+        await _shareTrip(inviteEmail);
+        if (mounted) goTo('shared');
       }
       return;
     }
     if (label == 'Sign out' && route == 'signout') {
-      d.signedIn = false;
-      context.goNamed('welcome');
+      await d.services.messaging.detachUser();
+      await d.services.auth.signOut();
+      d.clearAccount();
+      if (mounted) context.goNamed('welcome');
+      return;
+    }
+    if (label == 'People on this trip' && d.services.auth.currentUser != null) {
+      await d.loadAccount();
+      if (!d.trips.contains(site)) {
+        goTo('this-trip-is-no-longer-available');
+        return;
+      }
+    }
+    if (label == 'Refresh account') {
+      await d.loadAccount();
       return;
     }
     if (label == 'Get started' || label == 'Explore as a guest') {
-      d.signedIn = false;
+      if (d.services.auth.currentUser != null) {
+        await d.services.messaging.detachUser();
+        await d.services.auth.signOut();
+      }
+      d.clearAccount();
       goTo('guest');
       return;
     }
@@ -303,17 +823,49 @@ class _DesignScreenState extends State<DesignScreen>
       d.trips.clear();
       d.details.clear();
     }
+    if (label.startsWith('Open saved: ')) {
+      selectSite(label.substring('Open saved: '.length));
+      goTo(site == 'Sunset Ridge' ? 'ridge' : 'detail');
+      return;
+    }
+    if (label.startsWith('Remove saved: ')) {
+      final savedSite = label.substring('Remove saved: '.length);
+      final user = d.services.auth.currentUser;
+      if (user != null) {
+        await d.services.firestore.removeCampsite(user.uid, savedSite);
+      }
+      d.savedCampsiteIds.remove(savedSite);
+      goTo(d.savedCampsiteIds.isEmpty ? 'savedempty' : 'saved');
+      return;
+    }
     if (label == 'Empty saved' ||
         label == 'Remove Redwood Grove' ||
         label == 'Remove from saved') {
+      final user = d.services.auth.currentUser;
+      if (user != null) {
+        await d.services.firestore.removeCampsite(user.uid, site);
+      }
       d.saved = false;
     }
     if (label == 'Save campsite') {
       if (guest) {
         goTo('authgate');
       } else {
+        final user = d.services.auth.currentUser;
+        if (user != null) {
+          await d.services.firestore.saveCampsite(
+            user.uid,
+            SavedCampsite(
+              siteId: site,
+              name: site,
+              pricePerNight: site == 'Sunset Ridge'
+                  ? r'$55 / night'
+                  : r'$65 / night',
+            ),
+          );
+        }
         d.saved = true;
-        goTo('detailsaved');
+        if (mounted) goTo('detailsaved');
       }
       return;
     }
@@ -357,7 +909,14 @@ class _DesignScreenState extends State<DesignScreen>
     }
     if (label == 'Use selected dates') {
       d.bookingDates = draftDates ?? d.bookingDates ?? trip.dates;
-      if (d.editingTrip) trip.dates = d.bookingDates!;
+      if (d.editingTrip) {
+        trip.dates = d.bookingDates!;
+        await _persistTrip(site);
+        await _notifyConditionChange(
+          '$site: dates changed',
+          'Your trip dates are now ${trip.dates}.',
+        );
+      }
       goTo(d.editingTrip ? 'tripupdated' : reviewRoute);
       return;
     }
@@ -373,54 +932,116 @@ class _DesignScreenState extends State<DesignScreen>
       }
       d.trips.add(site);
       d.details.putIfAbsent(site, TripDetails.new);
+      final previousAlerts = d.alerts;
       d.alerts = d.bookingAlerts ?? d.alerts;
       d.bookingAlerts = null;
       trip.dates = d.bookingDates ?? trip.dates;
       d.bookingDates = null;
       trip.status = 'Request pending';
+      // First Integrations: the trip now lives in Firestore (local
+      // store in local mode), so it can be shared and synced.
+      await _persistTrip(site);
+      final user = d.services.auth.currentUser;
+      if (user != null) {
+        try {
+          await d.services.firestore.saveAlertPreference(user.uid, d.alerts);
+        } catch (_) {
+          d.alerts = previousAlerts;
+          if (mounted) {
+            notice(
+              'Trip saved, but notification preferences could not be saved.',
+            );
+          }
+        }
+      }
       goTo(site == 'Sunset Ridge' ? 'ridgeconfirmed' : 'confirmed');
       return;
     }
     if (label == 'Remove trip' && route == 'remove') {
+      _tripRecord(site);
+      await d.services.firestore.deleteTrip(_tripIdFor(site));
+      d.records.remove(site);
       d.trips.remove(site);
       d.details.remove(site);
       if (d.trips.isNotEmpty) selectSite(d.trips.first);
-      context.goNamed(d.trips.isEmpty ? 'tripsempty' : 'trips', extra: site);
+      if (mounted) {
+        context.goNamed(d.trips.isEmpty ? 'tripsempty' : 'trips', extra: site);
+      }
       return;
     }
     if (label == 'Host accepts' ||
         label == 'Host declines' ||
         label == 'No response in 24 hours' ||
         label == 'Request again') {
-      setState(
-        () => trip.status = {
-          'Host accepts': 'Accepted',
-          'Host declines': 'Declined',
-          'No response in 24 hours': 'Expired',
-          'Request again': 'Request pending',
-        }[label]!,
+      final status = {
+        'Host accepts': 'Accepted',
+        'Host declines': 'Declined',
+        'No response in 24 hours': 'Expired',
+        'Request again': 'Request pending',
+      }[label]!;
+      setState(() => trip.status = status);
+      await _persistTrip(site);
+      await _notifyConditionChange(
+        '$site: booking $status',
+        'Your trip request is now $status.',
       );
       notice('Demo booking: ${trip.status}');
       return;
     }
-    if (label == 'Accept invitation') {
-      trip.invitation = 'Friend joined';
-      goTo('you-joined-the-trip');
-      return;
-    }
-    if (label == 'Decline invitation') {
-      trip.invitation = 'Invitation declined';
-      goTo('invitation-declined');
+    if (label == 'Accept invitation' || label == 'Decline invitation') {
+      final record = d.records[site];
+      final user = d.services.auth.currentUser;
+      if (record != null && user != null && record.ownerUid != user.uid) {
+        await d.services.firestore.respondToInvitation(
+          record,
+          user,
+          label == 'Accept invitation' ? 'accepted' : 'declined',
+        );
+      } else if (d.services.isFirebaseConfigured) {
+        throw StateError('Sign in as the invited person to respond.');
+      }
+      trip.invitation = label == 'Accept invitation'
+          ? (record != null && record.ownerUid != user?.uid
+                ? 'You joined the trip'
+                : 'Friend joined')
+          : 'Invitation declined';
+      if (label == 'Decline invitation' &&
+          record != null &&
+          record.ownerUid != user?.uid) {
+        d.trips.remove(site);
+        d.records.remove(site);
+      }
+      goTo(
+        label == 'Accept invitation'
+            ? 'you-joined-the-trip'
+            : 'invitation-declined',
+      );
       return;
     }
     if (label == 'Revoke invitation') {
+      _tripRecord(site);
+      final record = d.records[site];
+      if (record != null) {
+        d.records[site] = await d.services.firestore.revokeInvitations(record);
+      }
       trip.invitation = 'Invitation revoked';
       goTo('this-invitation-is-unavailable');
       return;
     }
     if (label == 'Refresh shared plan') {
-      notice('Demo shared plan refreshed: ${trip.dates}');
-      setState(() {});
+      await d.loadAccount();
+      if (!mounted) return;
+      if (!d.trips.contains(site)) {
+        goTo('this-invitation-is-unavailable');
+        return;
+      }
+      final record = d.records[site];
+      if (record != null &&
+          record.ownerUid != d.services.auth.currentUser?.uid) {
+        openTrip();
+      }
+      notice('Shared plan refreshed.');
+      if (mounted) setState(() {});
       return;
     }
     if (label == 'Upgrade succeeds') {
@@ -481,7 +1102,7 @@ class _DesignScreenState extends State<DesignScreen>
     if ((label == 'Redwood Grove' || label == 'Sunset Ridge') &&
         route == 'trips') {
       selectSite(label);
-      goTo(tripRoute);
+      openTrip();
       return;
     }
     if (label == 'Sunset Ridge') {
@@ -493,6 +1114,10 @@ class _DesignScreenState extends State<DesignScreen>
     if (label == 'Explore and plan' ||
         label == 'Trips and group sharing' ||
         label == 'Account and Plus') {
+      if (d.services.isFirebaseConfigured && guest) {
+        goTo('authgate');
+        return;
+      }
       d.signedIn = true;
     }
     if (label == 'Trips and group sharing') {
@@ -509,7 +1134,27 @@ class _DesignScreenState extends State<DesignScreen>
       );
       return;
     }
-    if (label == 'Save preferences') d.alerts = draftAlerts ?? d.alerts;
+    if (label == 'Save preferences') {
+      final enabled = draftAlerts ?? d.alerts;
+      final user = d.services.auth.currentUser;
+      if (user != null) {
+        await d.services.firestore.saveAlertPreference(user.uid, enabled);
+      }
+      d.alerts = enabled;
+      try {
+        if (enabled) {
+          await _enableNotifications();
+        } else {
+          await d.services.messaging.detachUser();
+        }
+      } catch (error) {
+        if (mounted) {
+          notice(
+            'Preferences saved. Push setup could not be updated: ${error is StateError ? error.message : 'check your connection and retry'}',
+          );
+        }
+      }
+    }
     if (label == 'Redwood: fire restriction') selectSite('Redwood Grove');
     if (label == 'Sunset: conditions unconfirmed') selectSite('Sunset Ridge');
     if (label == 'View affected trip') selectSite('Redwood Grove');
@@ -552,7 +1197,9 @@ class _DesignScreenState extends State<DesignScreen>
       'Enable trip updates': 'notifprompt',
       'Allow notifications': reviewRoute,
       'Not now': reviewRoute,
-      'View saved campsites': d.saved ? 'saved' : 'savedempty',
+      'View saved campsites': d.savedCampsiteIds.isNotEmpty
+          ? 'saved'
+          : 'savedempty',
       'Downloaded trips': d.downloads.isNotEmpty
           ? 'downloaded-summaries'
           : 'no-downloaded-trips',
@@ -630,7 +1277,10 @@ class _DesignScreenState extends State<DesignScreen>
           : 'Off';
     }
     if (value == 'John') {
-      value = d.name;
+      // Profile screens render the signed-in account's name from
+      // AuthService / Firestore, not a hardcoded sample name.
+      value = d.services.auth.currentUser?.displayName ?? d.name;
+      if (value.isEmpty) value = 'Not signed in';
     }
     if (value.contains('Oct 23–25, 2026')) {
       final planning = [
@@ -654,9 +1304,11 @@ class _DesignScreenState extends State<DesignScreen>
   String noticeValue(String name, String fallback) {
     switch (name) {
       case 'Notice / Name':
-        return d.name;
+        final displayName = d.services.auth.currentUser?.displayName ?? d.name;
+        return displayName.isEmpty ? 'Not signed in' : displayName;
       case 'Notice / Email':
-        return d.email;
+        final accountEmail = d.services.auth.currentUser?.email ?? d.email;
+        return accountEmail.isEmpty ? 'Not signed in' : accountEmail;
       case 'Notice / People':
         return trip.invitation;
       case 'Notice / Downloaded dates':
@@ -792,7 +1444,16 @@ class _DesignScreenState extends State<DesignScreen>
   }
 
   @override
+  List<String> get savedSites => d.savedCampsiteIds.toList();
+
+  @override
   bool get hasRedwoodAlert => d.trips.contains('Redwood Grove');
+
+  @override
+  List<AppNotification> get notifications => d.notifications;
+
+  @override
+  String get backendMode => d.services.mode;
 
   @override
   Widget areaMap() => CampsiteMap(
@@ -806,7 +1467,24 @@ class _DesignScreenState extends State<DesignScreen>
     },
   );
 
+  void openTrip() {
+    final record = d.records[site];
+    if (record != null && record.ownerUid != _ownerUid) {
+      goTo(
+        trip.invitation == 'You joined the trip'
+            ? 'you-joined-the-trip'
+            : 'you-re-invited',
+      );
+    } else {
+      goTo(tripRoute);
+    }
+  }
+
   void tab(int index) {
+    unawaited(_openTab(index));
+  }
+
+  Future<void> _openTab(int index) async {
     if (!d.signedIn) {
       if (index == 0) {
         context.goNamed('guest');
@@ -815,10 +1493,27 @@ class _DesignScreenState extends State<DesignScreen>
       goTo('authgate');
       return;
     }
+    if (d.services.auth.currentUser != null) {
+      if (busy) return;
+      setState(() => busy = true);
+      try {
+        await d.loadAccount();
+      } catch (_) {
+        if (mounted) {
+          notice(
+            'Could not refresh your account. Check your connection and retry.',
+          );
+        }
+        return;
+      } finally {
+        if (mounted) setState(() => busy = false);
+      }
+      if (!mounted) return;
+    }
     final routes = [
       'explore',
       d.trips.isEmpty ? 'tripsempty' : 'trips',
-      d.saved ? 'saved' : 'savedempty',
+      d.savedCampsiteIds.isNotEmpty ? 'saved' : 'savedempty',
       d.trips.isEmpty || !d.alerts ? 'alertsempty' : 'alerts',
       d.plus ? 'profileplus' : 'profile',
     ];
@@ -851,169 +1546,191 @@ class _DesignScreenState extends State<DesignScreen>
         : route.startsWith('profile')
         ? 4
         : 0;
-    return Scaffold(
-      bottomNavigationBar: showTabs
-          ? NavigationBar(
-              height: 78,
-              backgroundColor: Colors.white,
-              indicatorColor: softGreen,
-              selectedIndex: selected,
-              onDestinationSelected: tab,
-              destinations: [
-                for (final entry in [
-                  'Explore',
-                  'Trips',
-                  'Saved',
-                  'Alerts',
-                  'Profile',
-                ].asMap().entries)
-                  NavigationDestination(
-                    icon: Image.asset(
-                      widget.screen.tabAssets[entry.key],
-                      width: 18,
-                      height: 18,
-                    ),
-                    label: entry.value,
-                  ),
-              ],
-            )
-          : null,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 14),
-              child: SizedBox(
-                height: 20,
-                child: Row(
-                  children: [
-                    if (kIsWeb)
-                      const Text('9:41', style: TextStyle(fontSize: 12)),
-                    const Spacer(),
-                    InkWell(
-                      onTap: () => goTo('guide'),
-                      child: const Text(
-                        'Demo · Guide',
-                        style: TextStyle(fontSize: 11, color: muted),
-                      ),
-                    ),
-                    const Spacer(),
-                    if (kIsWeb && widget.screen.statusAsset != null)
-                      Image.asset(
-                        widget.screen.statusAsset!,
-                        width: 58,
+    return AbsorbPointer(
+      absorbing: busy,
+      child: Scaffold(
+        bottomNavigationBar: showTabs
+            ? NavigationBar(
+                height: 78,
+                backgroundColor: Colors.white,
+                indicatorColor: softGreen,
+                selectedIndex: selected,
+                onDestinationSelected: tab,
+                destinations: [
+                  for (final entry in [
+                    'Explore',
+                    'Trips',
+                    'Saved',
+                    'Alerts',
+                    'Profile',
+                  ].asMap().entries)
+                    NavigationDestination(
+                      icon: Image.asset(
+                        widget.screen.tabAssets[entry.key],
+                        width: 18,
                         height: 18,
                       ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final heading in widget.screen.header(this))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: heading,
-                      ),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: Form(
-                key: form,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
-                  children: [
-                    if (route == 'loading')
-                      const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Center(child: CircularProgressIndicator()),
-                      ),
-                    if (route == 'alerts' && d.trips.contains('Sunset Ridge'))
-                      ListTile(
-                        title: const Text('Sunset: conditions unconfirmed'),
-                        onTap: () {
-                          selectSite('Sunset Ridge');
-                          goTo('unknown');
-                        },
-                      ),
-                    if (route == 'trips')
-                      for (final site in d.trips)
-                        Card(
-                          child: ListTile(
-                            title: Text(site),
-                            subtitle: Text(
-                              d.details[site]?.dates ?? TripDetails().dates,
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () {
-                              selectSite(site);
-                              goTo(tripRoute);
-                            },
-                          ),
-                        ),
-                    for (final section in widget.screen.body(this))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: section,
-                      ),
-                    if (route == 'downloaded-summaries')
-                      for (final site in d.downloads)
-                        FilledButton(
-                          onPressed: () {
-                            selectSite(site);
-                            goTo(
-                              trip.downloadedDates == trip.dates
-                                  ? 'downloaded'
-                                  : 'your-offline-copy-is-older',
-                            );
-                          },
-                          child: Text(
-                            '$site · ${d.details[site]!.downloadedDates}',
-                          ),
-                        ),
-                    if (route == 'guide')
-                      ExpansionTile(
-                        title: const Text('All prototype screens'),
-                        children: [
-                          for (final screen in campPages)
-                            ListTile(
-                              title: Text(
-                                screen.name.replaceAll(' · Complete flow', ''),
-                              ),
-                              onTap: () => context.pushNamed(screen.route),
-                            ),
-                        ],
-                      ),
-                    if (route == 'booking-response')
-                      Text('Demo booking status: ${trip.status}'),
-                  ],
-                ),
-              ),
-            ),
-            if (route == 'detail' || route == 'guestdetail')
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-                child: Row(
-                  children: [
-                    const Text(r'$65 / night'),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => act('Check availability'),
-                        child: const Text('Check availability'),
-                      ),
+                      label: entry.value,
                     ),
-                  ],
+                ],
+              )
+            : null,
+        body: SafeArea(
+          child: Column(
+            children: [
+              if (busy) const LinearProgressIndicator(),
+              if (!d.services.isFirebaseConfigured)
+                const Text(
+                  'Local demo · data disappears on restart',
+                  style: TextStyle(fontSize: 11),
+                ),
+              if (d.syncError != null)
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text(d.syncError!),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 18, 24, 14),
+                child: SizedBox(
+                  height: 20,
+                  child: Row(
+                    children: [
+                      if (kIsWeb)
+                        const Text('9:41', style: TextStyle(fontSize: 12)),
+                      const Spacer(),
+                      InkWell(
+                        onTap: () => goTo('guide'),
+                        child: const Text(
+                          'Demo · Guide',
+                          style: TextStyle(fontSize: 11, color: muted),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (kIsWeb && widget.screen.statusAsset != null)
+                        Image.asset(
+                          widget.screen.statusAsset!,
+                          width: 58,
+                          height: 18,
+                        ),
+                    ],
+                  ),
                 ),
               ),
-          ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final heading in widget.screen.header(this))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: heading,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Form(
+                  key: form,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+                    children: [
+                      if (route == 'loading')
+                        const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Center(child: CircularProgressIndicator()),
+                        ),
+                      if (route == 'alerts' && d.trips.contains('Sunset Ridge'))
+                        ListTile(
+                          title: const Text('Sunset: conditions unconfirmed'),
+                          onTap: () {
+                            selectSite('Sunset Ridge');
+                            goTo('unknown');
+                          },
+                        ),
+                      if (route == 'trips')
+                        for (final site in d.trips)
+                          Card(
+                            child: ListTile(
+                              title: Text(site),
+                              subtitle: Text(
+                                d.details[site]?.dates ?? TripDetails().dates,
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () {
+                                selectSite(site);
+                                openTrip();
+                              },
+                            ),
+                          ),
+                      for (final section in widget.screen.body(this))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: section,
+                        ),
+                      if (route == 'downloaded-summaries')
+                        for (final site in d.downloads)
+                          FilledButton(
+                            onPressed: () {
+                              selectSite(site);
+                              goTo(
+                                trip.downloadedDates == trip.dates
+                                    ? 'downloaded'
+                                    : 'your-offline-copy-is-older',
+                              );
+                            },
+                            child: Text(
+                              '$site · ${d.details[site]!.downloadedDates}',
+                            ),
+                          ),
+                      if (route.startsWith('profile'))
+                        TextButton(
+                          onPressed: () => act('Refresh account'),
+                          child: const Text('Refresh account'),
+                        ),
+                      if (route == 'guide')
+                        ExpansionTile(
+                          title: const Text('All prototype screens'),
+                          children: [
+                            for (final screen in campPages)
+                              ListTile(
+                                title: Text(
+                                  screen.name.replaceAll(
+                                    ' · Complete flow',
+                                    '',
+                                  ),
+                                ),
+                                onTap: () => context.pushNamed(screen.route),
+                              ),
+                          ],
+                        ),
+                      if (route == 'booking-response')
+                        Text('Demo booking status: ${trip.status}'),
+                    ],
+                  ),
+                ),
+              ),
+              if (route == 'detail' || route == 'guestdetail')
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                  child: Row(
+                    children: [
+                      const Text(r'$65 / night'),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => act('Check availability'),
+                          child: const Text('Check availability'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

@@ -4,21 +4,21 @@ Know what to expect before you camp.
 
 CSEN 268 · Group 2 · Atishay Jain and Alexander Shirazi
 
-Flutter implementation of the **Coded UI of the App** milestone: screens,
-Material theme, interactive controls, and named routes based on our submitted
-CampReady Figma design.
+Flutter implementation of CampReady, with the submitted Figma screens,
+Material theme, interactive controls, named routes, and Firebase integration.
 
 ## Run
 
-Requires Flutter 3.47.5 / Dart 3.13.4 or a compatible newer stable SDK.
+Requires Flutter 3.47.7 / Dart 3.13.5 or a compatible newer stable SDK.
 
 ```sh
 flutter pub get
 flutter run -d chrome
 ```
 
-Run on a connected Android or iOS device with `flutter run`. iOS requires Xcode;
-Android requires the Android SDK. The web build runs without API keys.
+The Firebase configuration currently supports web. Live Android and iOS use
+requires separate platform registration. For an explicit UI-only preview on
+any platform, run with `--dart-define=LOCAL_DEMO=true`.
 
 ```sh
 flutter analyze
@@ -45,17 +45,24 @@ walkthrough or select any prototype screen.
 ![Welcome](docs/screenshots/welcome.png)
 ![Explore](docs/screenshots/explore.png)
 
+## First Integrations (CSEN 268, due Nov 12, 2026)
+
+See [setup and verification](docs/FIRST_INTEGRATIONS.md). Email/password auth,
+saved campsites, trips, and sharing use Firebase. Data reloads after signing in
+and refreshing tabs. Local demo mode is explicit and labeled.
+
+Web push uses the configured public VAPID key and requires browser permission. In-app sample update records do not themselves send push messages.
+
 ## Milestone boundaries
 
-All data and services are **simulated**. Bookings, accounts, emails, notification
-permissions, location permissions, payments and downloads do not contact real
-services. No charge is made. Demo state lives in memory and resets on restart;
-offline summaries are session previews, not persistent downloads. The map is
-illustrative. Dates and forecasts are fixed sample scenarios from the design.
+Bookings and payments are **simulated**: no charge is made. Demo
+state lives in memory and resets on restart; offline summaries are
+session previews, not persistent downloads. The map is illustrative.
+Dates and forecasts are fixed sample scenarios from the design.
 
 The one-pager's proposed Plus price is **$2.99/month**. Core browsing, conditions
-and essential alerts stay free. The later integration milestone will connect
-Firebase Auth, Firestore, FCM, device location and live conditions feeds.
+and essential alerts stay free. Device location and live conditions feeds are
+later final-project work, not this milestone.
 
 ## Design sources
 
@@ -65,19 +72,17 @@ Firebase Auth, Firestore, FCM, device location and live conditions feeds.
 - Campsite photos, map layers and navigation graphics are downloaded original
   Figma assets. Roboto is bundled locally with its license.
 
-The live file contained 100 top-level frames when implemented. Detailed exports
-were available for 71 frames before the Figma Education-plan tool limit; the
-remaining 29 use directly read Figma text/layout blocks and the supplied route
-and theme specification. Native Flutter layout adapts the design to scrolling,
-editable fields and screen width; screenshots document the coded result.
+The Figma file contained 100 top-level frames when implemented. Native Flutter
+layout adapts the design to scrolling, editable fields and screen width;
+screenshots document the coded result.
 
 ## Verification and submission
 
-128 passing tests walk signup, booking, sharing, five-tab navigation, filters, profile
-validation, Plus and offline previews. Regression checks cover both campsites
-through Back navigation, sharing, removal and restored browser routes. Each route is rendered at 390 × 844 with
-layout exceptions checked. [Screenshots](docs/screenshots) are actual Flutter
-renders of the coded screens, not Figma exports.
+Tests cover signup, booking, sharing, navigation, validation, account restoration,
+invitation access, and failure handling. Each of the 100 routes is rendered at
+390 × 844 with layout exceptions checked. Service tests using the local store
+are separate from live Firebase verification. [Screenshots](docs/screenshots)
+show the earlier coded UI snapshot.
 
 Regenerate screenshots explicitly:
 
@@ -85,14 +90,16 @@ Regenerate screenshots explicitly:
 flutter test --dart-define=SCREENSHOTS=true --update-goldens
 ```
 
-Create a new tag for this revision before submitting the repository, or submit
-the screenshots as permitted by the assignment. **coded-ui-v1.2** identifies the
-earlier UI snapshot. This repository does not submit anything to Camino.
+**coded-ui-v1.2** identifies the earlier submitted UI snapshot.
 
 ## Code layout
 
 - `lib/theme.dart`: Material colors, typography and control styles.
 - `lib/app.dart`: named routes, session state, interactive screens and controls.
+- `lib/services/`: First Integrations services — AuthService (Firebase Auth),
+  FirestoreService (Cloud Firestore), MessagingService (FCM), plus an
+  explicit in-memory demo for previews and tests.
+  `lib/firebase_options.dart` contains the web client configuration.
 - `lib/screens/` contains the Flutter layouts grouped by feature and the list of named routes.
 - `lib/screens.dart` contains the buttons, cards and text styles shared by those screens.
 - `assets/images`: local design assets; no temporary Figma URLs at runtime.

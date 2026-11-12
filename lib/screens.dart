@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'theme.dart';
+import 'services/services.dart';
 
 part 'screens/welcome.dart';
 part 'screens/explore.dart';
@@ -24,6 +25,14 @@ abstract class PageControls {
   Widget brandMark(String asset, Widget caption);
   bool get ridgeMatch;
   bool get hasRedwoodAlert;
+  List<String> get savedSites;
+
+  /// Notification records for this account (MessagingService /
+  /// Firestore), newest first. Empty until a condition changes.
+  List<AppNotification> get notifications;
+
+  /// 'firebase' when Firebase is configured, otherwise 'local'.
+  String get backendMode;
   String get destination;
 }
 
