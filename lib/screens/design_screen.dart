@@ -415,14 +415,18 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
         await _locate();
         return;
       case 'Try location again':
-        final status = _explore.state.location;
+        // Check again first: the user may have just turned it on.
+        final status = await _explore.locate();
+        if (!mounted) return;
+        if (status == LocationStatus.granted) {
+          _goRoot('explore');
+          return;
+        }
         final location = context.read<LocationRepository>();
         if (status == LocationStatus.deniedForever && !kIsWeb) {
           await location.openAppSettings();
         } else if (status == LocationStatus.serviceDisabled && !kIsWeb) {
           await location.openLocationSettings();
-        } else {
-          await _locate();
         }
         return;
       case 'Santa Cruz' || 'Boulder Creek':

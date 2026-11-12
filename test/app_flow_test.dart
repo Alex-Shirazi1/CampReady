@@ -176,9 +176,8 @@ void main() {
           verify(() => location.openAppSettings()).called(1);
         } else if (status == LocationStatus.serviceDisabled) {
           verify(() => location.openLocationSettings()).called(1);
-        } else {
-          verify(() => location.currentPosition()).called(2);
         }
+        verify(() => location.currentPosition()).called(2);
         await enter(tester, 'Destination', 'Boulder');
         await tap(tester, 'Search campsites');
         expect(screenOf(tester), 'guest');
