@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:campready/repositories/auth_repository.dart';
 import 'package:campready/repositories/campsite_repository.dart';
 import 'package:campready/repositories/location_repository.dart';
@@ -325,6 +327,39 @@ void main() {
         (await LocationRepository(geolocator: geo).currentPosition()).status,
         LocationStatus.unavailable,
       );
+    });
+
+    test('a slow GPS fix falls back to the last known position', () async {
+      when(() => geo.isLocationServiceEnabled()).thenAnswer((_) async => true);
+      when(() => geo.checkPermission())
+          .thenAnswer((_) async => LocationPermission.whileInUse);
+      when(
+        () => geo.getCurrentPosition(
+          locationSettings: any(named: 'locationSettings'),
+        ),
+      ).thenThrow(TimeoutException('no fix'));
+      when(
+        () => geo.getLastKnownPosition(
+          forceLocationManager: any(named: 'forceLocationManager'),
+        ),
+      ).thenAnswer(
+        (_) async => Position(
+          latitude: 37.1,
+          longitude: -122.1,
+          timestamp: DateTime(2026),
+          accuracy: 50,
+          altitude: 0,
+          altitudeAccuracy: 0,
+          heading: 0,
+          headingAccuracy: 0,
+          speed: 0,
+          speedAccuracy: 0,
+        ),
+      );
+      final result = await LocationRepository(geolocator: geo)
+          .currentPosition();
+      expect(result.status, LocationStatus.granted);
+      expect(result.latitude, 37.1);
     });
 
     test('distance is converted to miles', () {

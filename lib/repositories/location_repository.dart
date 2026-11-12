@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 enum LocationStatus {
@@ -28,6 +29,22 @@ class LocationRepository {
 
   static const _metersPerMile = 1609.344;
 
+  bool get _android =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  /// On Android the plain location manager is used, so GPS works even
+  /// when the user declines Google's "Location Accuracy" prompt.
+  LocationSettings get _settings => _android
+      ? AndroidSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 20),
+          forceLocationManager: true,
+        )
+      : const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 20),
+        );
+
   Future<LocationResult> currentPosition() async {
     try {
       if (!await _geo.isLocationServiceEnabled()) {
@@ -43,12 +60,17 @@ class LocationRepository {
       if (permission == LocationPermission.deniedForever) {
         return const LocationResult(LocationStatus.deniedForever);
       }
-      final position = await _geo.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 20),
-        ),
-      );
+      Position? position;
+      try {
+        position = await _geo.getCurrentPosition(locationSettings: _settings);
+      } on TimeoutException {
+        position = await _geo.getLastKnownPosition(
+          forceLocationManager: _android,
+        );
+      }
+      if (position == null) {
+        return const LocationResult(LocationStatus.unavailable);
+      }
       return LocationResult(
         LocationStatus.granted,
         latitude: position.latitude,
