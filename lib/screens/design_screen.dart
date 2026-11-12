@@ -214,8 +214,9 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
   @override
   bool get showDemo => showDemoBuild;
 
+  /// The explicit on-device preview build (--dart-define=LOCAL_DEMO=true).
   @override
-  bool get localMode => !context.read<AuthRepository>().usesFirebase;
+  bool get localMode => const bool.fromEnvironment('LOCAL_DEMO');
 
   // ---- navigation ----
 
