@@ -346,6 +346,45 @@ void main() {
       },
     );
 
+    test(
+      'an invitee does not see group updates from before the invite',
+      () async {
+        final (services, owner, invitee, trip) = await _sharedTrip();
+        Future<void> change(String body) =>
+            services.messaging.notifyConditionChange(
+              ownerUid: owner.uid,
+              ownerEmail: owner.email,
+              tripId: trip.id,
+              site: 'Redwood Grove',
+              title: 'Redwood Grove: dates changed',
+              body: body,
+            );
+        Future<void> tick() =>
+            Future<void>.delayed(const Duration(milliseconds: 5));
+        await change('before invite');
+        await tick();
+        await services.messaging.notifyTripShared(
+          ownerUid: owner.uid,
+          ownerEmail: owner.email,
+          inviteeEmail: invitee.email,
+          tripId: trip.id,
+          site: 'Redwood Grove',
+        );
+        await tick();
+        await change('after invite');
+        final bodies = (await services.firestore.notifications(
+          invitee.uid,
+          email: invitee.email,
+        )).map((n) => n.body);
+        expect(bodies, contains('after invite'));
+        expect(bodies, isNot(contains('before invite')));
+        expect(
+          bodies,
+          contains('owner@example.com invited you to a CampReady trip.'),
+        );
+      },
+    );
+
     test('a declined invitee stops seeing the trip notifications', () async {
       final (services, owner, invitee, trip) = await _sharedTrip();
       await services.firestore.respondToInvitation(trip, invitee, 'declined');

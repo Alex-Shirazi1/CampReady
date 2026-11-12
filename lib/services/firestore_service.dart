@@ -473,12 +473,28 @@ class FirestoreService {
       if (trip.ownerUid == uid) continue;
       // A failed notifications read must not hide the trip itself.
       try {
-        for (final note in await _tripNotifications(trip.id)) {
+        final notes = await _tripNotifications(trip.id);
+        // Group updates from before this person was first invited are
+        // not theirs.
+        DateTime? invitedAt;
+        for (final note in notes) {
+          final at = note.createdAt;
+          if (note.recipientEmail != me || at == null) continue;
+          if (invitedAt == null || at.isBefore(invitedAt)) invitedAt = at;
+        }
+        for (final note in notes) {
           if (merged.containsKey(note.id)) continue;
           // An invitation notice is addressed to one invitee; others on
           // the same trip must not see it as their own invitation.
           final recipient = note.recipientEmail;
           if (recipient != null && recipient != me) continue;
+          final at = note.createdAt;
+          if (recipient == null &&
+              invitedAt != null &&
+              at != null &&
+              at.isBefore(invitedAt)) {
+            continue;
+          }
           merged[note.id] = readIds.contains(note.id)
               ? note.copyWith(read: true)
               : note;
