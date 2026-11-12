@@ -123,6 +123,9 @@ class _CampReadyState extends State<CampReady> {
       messengerKey.currentState?.showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
+          // A banner with an action stays up by default; let it go.
+          persist: false,
+          duration: const Duration(seconds: 6),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
