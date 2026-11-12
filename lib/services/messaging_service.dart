@@ -188,6 +188,14 @@ class MessagingService {
       status = 'Web push needs the project VAPID key';
       return null;
     }
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
+      // iOS push needs an APNs key from a paid Apple Developer account.
+      final apns = await FirebaseMessaging.instance.getAPNSToken();
+      if (apns == null) {
+        status = 'Push is not set up for iPhone in this build';
+        return null;
+      }
+    }
     await _registration?.cancel();
     final registered = Completer<String>();
     _registration = FirebaseMessaging.instance.onRegistered.listen(
