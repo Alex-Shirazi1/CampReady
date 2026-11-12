@@ -187,7 +187,11 @@ GoRouter buildRouter({
     if (segments.isEmpty) return '/splash';
     final route = name ?? segments.last;
     if (!showDemoBuild && demoRoutes.contains(route)) {
-      return auth.state is AuthAuthenticated ? '/explore' : '/welcome';
+      return switch (auth.state) {
+        AuthAuthenticated() => '/explore',
+        AuthInitial() => '/splash',
+        _ => '/welcome',
+      };
     }
     if (auth.state is AuthLoading) return null;
     final signedIn = auth.state is AuthAuthenticated;
