@@ -195,9 +195,19 @@ class AuthService {
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
+      case 'invalid-login-credentials':
         return 'Check your email and password';
+      case 'too-many-requests':
+        return 'Too many attempts. Wait a minute and try again.';
+      case 'network-request-failed':
+        return 'No connection. Check your internet and try again.';
+      case 'user-disabled':
+        return 'This account is disabled.';
       default:
-        return e.message ?? 'Sign-in failed';
+        final message = e.message?.trim() ?? '';
+        return message.length > 8
+            ? message
+            : 'Sign-in failed. Check your email and password, then try again.';
     }
   }
 }
