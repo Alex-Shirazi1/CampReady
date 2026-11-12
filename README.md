@@ -107,7 +107,7 @@ flutter test
 flutter test integration_test/app_test.dart -d emulator-5554   # on a device or emulator
 ```
 
-There are 234 tests:
+There are 235 tests:
 
 - `bloc_test` tests for every Bloc and Cubit.
 - Repository tests with `mocktail`.
