@@ -51,7 +51,10 @@ class NotificationRepository {
   Future<void> disablePush() => _messaging.detachUser();
 
   static AppNotification fromRemote(RemoteMessage message) => AppNotification(
-    id: message.messageId ?? 'fcm_${DateTime.now().millisecondsSinceEpoch}',
+    id: MessagingService.noticeId(
+      message,
+      'fcm_${DateTime.now().millisecondsSinceEpoch}',
+    ),
     title: message.notification?.title ?? 'Trip update',
     body: message.notification?.body ?? '',
     tripId: message.data['tripId'] as String?,

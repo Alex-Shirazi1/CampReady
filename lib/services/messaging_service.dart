@@ -51,6 +51,14 @@ class MessagingService {
     defaultValue: 'BGeSQTWeHDPAyNrhJJOFCnQ7-Bc0Kq2fqh_nWJmQ6DnfSkXo6Q3nPixmgJ2QyhjIWhWm6h_c3ePZiTHE5oEhzfE',
   );
 
+  /// The saved notice this push is for, so a push and its notice show as
+  /// one alert. Falls back to the FCM message id.
+  static String noticeId(RemoteMessage message, String fallback) {
+    final id = message.data['notificationId'] as String?;
+    if (id != null && id.isNotEmpty) return id;
+    return message.messageId ?? fallback;
+  }
+
   Future<void> initialize() async {
     if (!useFirebase) return;
     _foreground ??= FirebaseMessaging.onMessage.listen((message) {
@@ -58,7 +66,7 @@ class MessagingService {
         return;
       }
       final notification = AppNotification(
-        id: message.messageId ?? _store.nextId('fcm'),
+        id: noticeId(message, _store.nextId('fcm')),
         title: message.notification?.title ?? 'Trip update',
         body: message.notification?.body ?? '',
         tripId: message.data['tripId'] as String?,
@@ -105,7 +113,7 @@ class MessagingService {
   /// app can open its trip.
   void handleOpenedMessage(RemoteMessage message) {
     final notification = AppNotification(
-      id: message.messageId ?? _store.nextId('fcm-opened'),
+      id: noticeId(message, _store.nextId('fcm-opened')),
       title: message.notification?.title ?? 'Trip update',
       body: message.notification?.body ?? '',
       tripId: message.data['tripId'] as String?,
@@ -125,7 +133,7 @@ class MessagingService {
     final message = await FirebaseMessaging.instance.getInitialMessage();
     if (message == null) return null;
     return AppNotification(
-      id: message.messageId ?? _store.nextId('fcm-initial'),
+      id: noticeId(message, _store.nextId('fcm-initial')),
       title: message.notification?.title ?? 'Trip update',
       body: message.notification?.body ?? '',
       tripId: message.data['tripId'] as String?,

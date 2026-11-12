@@ -28,7 +28,7 @@ async function uidsForEmails(emails) {
 }
 
 /** Sends one push to every saved device of each user who has alerts on. */
-async function sendToUsers(uids, { title, body, tripId, site }) {
+async function sendToUsers(uids, { id, title, body, tripId, site }) {
   let sent = 0;
   for (const uid of uids) {
     const profile = await db.doc(`users/${uid}`).get();
@@ -46,7 +46,8 @@ async function sendToUsers(uids, { title, body, tripId, site }) {
     const response = await getMessaging().sendEachForMulticast({
       fids,
       notification: { title, body },
-      data: { tripId: tripId || "", site: site || "" },
+      // notificationId lets the app match the push to the saved notice.
+      data: { notificationId: id || "", tripId: tripId || "", site: site || "" },
       webpush: tripId ? { fcmOptions: { link: `${SITE}/trips/${tripId}` } } : undefined,
     });
     sent += response.successCount;
@@ -86,6 +87,7 @@ exports.pushTripNotification = onDocumentCreated(
       : trip.get("sharedWithEmails") || [];
     const uids = await uidsForEmails(emails);
     const sent = await sendToUsers(uids, {
+      id: event.params.notificationId,
       title: note.title,
       body: note.body,
       tripId,
@@ -121,7 +123,13 @@ exports.pushInviteResponse = onDocumentWritten(
       createdAt: new Date().toISOString(),
       sentAt: FieldValue.serverTimestamp(),
     });
-    const sent = await sendToUsers([ownerUid], { title, body, tripId, site });
+    const sent = await sendToUsers([ownerUid], {
+      id,
+      title,
+      body,
+      tripId,
+      site,
+    });
     logger.info("Invite response pushed", { tripId, sent });
   },
 );

@@ -224,6 +224,16 @@ void main() {
       expect(ownerNotes.firstWhere((n) => n.id == note.id).read, isFalse);
     });
 
+    test('a push and its saved notice share one id', () {
+      const withNotice = RemoteMessage(
+        messageId: 'fcm-1',
+        data: {'notificationId': 'notif_7', 'tripId': 'trip_1'},
+      );
+      const withoutNotice = RemoteMessage(messageId: 'fcm-2');
+      expect(NotificationRepository.fromRemote(withNotice).id, 'notif_7');
+      expect(NotificationRepository.fromRemote(withoutNotice).id, 'fcm-2');
+    });
+
     test('tapped background message is recorded and emitted', () async {
       final services = CampReadyServices.local();
       final seen = <RemoteMessage>[];
