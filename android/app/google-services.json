@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "555369541366",
+    "project_id": "campready-group2",
+    "storage_bucket": "campready-group2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:555369541366:android:1876438574182118fe46d7",
+        "android_client_info": {
+          "package_name": "com.campready.campready"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBu1lUFGJ8PZDyGyNZljA9U0AsOBFXGR9Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

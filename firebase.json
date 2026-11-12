@@ -1,14 +1,61 @@
 {
-  "firestore": {"rules": "firestore.rules"},
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "public": "build/web",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "rewrites": [{"source": "**", "destination": "/index.html"}]
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
   },
   "emulators": {
-    "auth": {"host": "127.0.0.1", "port": 9099},
-    "firestore": {"host": "127.0.0.1", "port": 8080},
-    "ui": {"enabled": false},
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9099
+    },
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
     "singleProjectMode": true
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "campready-group2",
+          "appId": "1:555369541366:android:1876438574182118fe46d7",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "campready-group2",
+          "appId": "1:555369541366:ios:f2f9776f2c9c29fffe46d7",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "campready-group2",
+          "configurations": {
+            "android": "1:555369541366:android:1876438574182118fe46d7",
+            "ios": "1:555369541366:ios:f2f9776f2c9c29fffe46d7"
+          }
+        }
+      }
+    }
   }
 }
