@@ -26,6 +26,12 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>CampReady uses the camera so you can take a profile photo.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>CampReady uses your location to sort campsites by distance.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>CampReady lets you choose a profile photo from your library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
