@@ -59,6 +59,13 @@ class Forecast {
       days.map((d) => d.rainChance).reduce((a, b) => a > b ? a : b);
   int get maxWind => days.map((d) => d.windMph).reduce((a, b) => a > b ? a : b);
 
+  /// Short summary that never hides a rainy day behind a sunny one.
+  String get headline {
+    final wet = days.where((d) => d.rainChance >= 50);
+    if (wet.isNotEmpty) return '${wet.first.summary} likely';
+    return days.first.summary;
+  }
+
   String get packingTip {
     if (maxRain >= 50) return 'Rain is likely. Pack a rain fly and dry layers.';
     if (low <= 40) return 'Cold nights ahead. Bring a warm sleeping bag.';
