@@ -133,7 +133,11 @@ flutter build web && firebase deploy --only hosting --project campready-group2
 cd functions && npm install && cd .. && firebase deploy --only functions --project campready-group2
 ```
 
-Cloud Functions need the project on the Blaze (pay-as-you-go) plan; usage for this app stays within the free quota.
+Cloud Functions need the project on the Blaze (pay-as-you-go) plan; `campready-group2` is on Blaze with both functions deployed. To keep the bill at $0, each function runs at most 2 instances with 256 MB and a 30 s timeout, nothing stays warm, and old build images are deleted after a day:
+
+```sh
+firebase functions:artifacts:setpolicy --location us-central1 --days 1 --project campready-group2
+```
 
 ### Push on each platform
 
