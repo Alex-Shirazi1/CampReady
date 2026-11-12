@@ -123,6 +123,21 @@ class MessagingService {
     if (!_openedController.isClosed) _openedController.add(message);
   }
 
+  /// The message that launched the app from a terminated state.
+  Future<AppNotification?> initialMessage() async {
+    if (!useFirebase || emulator) return null;
+    final message = await FirebaseMessaging.instance.getInitialMessage();
+    if (message == null) return null;
+    return AppNotification(
+      id: message.messageId ?? _store.nextId('fcm-initial'),
+      title: message.notification?.title ?? 'Trip update',
+      body: message.notification?.body ?? '',
+      tripId: message.data['tripId'] as String?,
+      site: message.data['site'] as String?,
+      createdAt: DateTime.now(),
+    );
+  }
+
   Future<void> restoreRegistration(String uid) async {
     if (!useFirebase || emulator || (kIsWeb && vapidKey.isEmpty)) return;
     if (!await FirebaseMessaging.instance.isSupported()) return;
@@ -274,10 +289,6 @@ class MessagingService {
       await _firestore.addNotification(ownerUid, notification);
     }
     await _firestore.addTripNotification(tripId, notification);
-    if (notifyOwner) {
-      _delivered.insert(0, notification);
-      if (!_controller.isClosed) _controller.add(notification);
-    }
     return notification;
   }
 

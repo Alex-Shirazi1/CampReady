@@ -49,7 +49,7 @@ class FirestoreService {
           .set({'alertsEnabled': enabled}, SetOptions(merge: true))
           .timeout(timeout);
     } else {
-      _store.alertPreferences[uid] = enabled;
+      _store.userSettings.putIfAbsent(uid, () => {})['alertsEnabled'] = enabled;
     }
   }
 
@@ -58,7 +58,28 @@ class FirestoreService {
       final doc = await _db.collection('users').doc(uid).get().timeout(timeout);
       return doc.data()?['alertsEnabled'] as bool? ?? true;
     }
-    return _store.alertPreferences[uid] ?? true;
+    return _store.userSettings[uid]?['alertsEnabled'] as bool? ?? true;
+  }
+
+  /// Fields on users/{uid}: alertsEnabled, plan, photo.
+  Future<Map<String, dynamic>> userSettings(String uid) async {
+    if (useFirebase) {
+      final doc = await _db.collection('users').doc(uid).get().timeout(timeout);
+      return doc.data() ?? {};
+    }
+    return Map.of(_store.userSettings[uid] ?? {});
+  }
+
+  Future<void> updateUserSettings(String uid, Map<String, dynamic> data) async {
+    if (useFirebase) {
+      await _db
+          .collection('users')
+          .doc(uid)
+          .set(data, SetOptions(merge: true))
+          .timeout(timeout);
+      return;
+    }
+    _store.userSettings.putIfAbsent(uid, () => {}).addAll(data);
   }
 
   Future<AppUser?> getUserProfile(String uid) async {
@@ -488,8 +509,9 @@ class FirestoreService {
           // the same trip must not see it as their own invitation.
           final recipient = note.recipientEmail;
           if (recipient != null && recipient != me) continue;
-          merged[note.id] =
-              readIds.contains(note.id) ? note.copyWith(read: true) : note;
+          merged[note.id] = readIds.contains(note.id)
+              ? note.copyWith(read: true)
+              : note;
         }
       } catch (_) {
         continue;

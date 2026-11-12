@@ -1,3 +1,4 @@
+import 'package:campready/models/stay.dart';
 // First Integrations service tests (local mode only — no Firebase
 // project, no network). The same API is used in configured mode;
 // these tests pin the local fallback behaviour the UI relies on.
@@ -106,10 +107,7 @@ void main() {
         await services.firestore.isCampsiteSaved('uid-1', 'Redwood Grove'),
         isTrue,
       );
-      expect(
-        (await services.firestore.savedCampsites('uid-1')).length,
-        1,
-      );
+      expect((await services.firestore.savedCampsites('uid-1')).length, 1);
       await services.firestore.removeCampsite('uid-1', 'Redwood Grove');
       expect(
         await services.firestore.isCampsiteSaved('uid-1', 'Redwood Grove'),
@@ -142,10 +140,7 @@ void main() {
         1,
       );
       expect(
-        await services.firestore.tripsForUser(
-          invitee.uid,
-          invitee.email,
-        ),
+        await services.firestore.tripsForUser(invitee.uid, invitee.email),
         isEmpty,
       );
       final shared = await services.firestore.shareTrip(
@@ -161,7 +156,9 @@ void main() {
         )).length,
         1,
       );
-      final updated = shared.copyWith(dates: 'Oct 30–Nov 1, 2026');
+      final updated = shared.copyWith(
+        stay: Stay(DateTime(2026, 10, 30), DateTime(2026, 11, 1)),
+      );
       await services.firestore.updateTrip(updated);
       expect(
         (await services.firestore.getTrip('trip_1'))?.dates,
@@ -223,8 +220,6 @@ void main() {
         email: 'friend2@example.com',
       );
 
-      final received = <AppNotification>[];
-      final sub = services.messaging.onMessage.listen(received.add);
       final notification = await services.messaging.notifyConditionChange(
         ownerUid: owner.uid,
         ownerEmail: owner.email,
@@ -235,19 +230,10 @@ void main() {
         sharedWithEmails: ['friend2@example.com'],
       );
       expect(notification.title, contains('dates changed'));
-      expect(
-        (await services.firestore.notifications(owner.uid)).length,
-        1,
-      );
+      expect((await services.firestore.notifications(owner.uid)).length, 1);
       // The invitee's account also gets the record.
       final invitee = services.store.findUser('friend2@example.com')!;
-      expect(
-        (await services.firestore.notifications(invitee.uid)).length,
-        1,
-      );
-      expect(services.messaging.delivered.first.id, notification.id);
-      await sub.cancel();
-      expect(received, contains(notification));
+      expect((await services.firestore.notifications(invitee.uid)).length, 1);
     });
   });
 

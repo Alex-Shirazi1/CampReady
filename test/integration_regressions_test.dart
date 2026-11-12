@@ -1,3 +1,4 @@
+import 'package:campready/models/stay.dart';
 import 'package:campready/app.dart';
 import 'package:campready/services/services.dart';
 import 'package:flutter/material.dart';
@@ -86,7 +87,9 @@ void main() {
       );
       await services.firestore.respondToInvitation(shared, friend, 'accepted');
       await services.firestore.updateTrip(
-        trip.copyWith(dates: 'Oct 30–Nov 1, 2026'),
+        trip.copyWith(
+          stay: Stay(DateTime(2026, 10, 30), DateTime(2026, 11, 1)),
+        ),
       );
       final state = DemoState(services: services);
       await state.loadAccount();

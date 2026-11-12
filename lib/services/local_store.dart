@@ -34,7 +34,7 @@ class LocalStore {
 
   final Map<String, _LocalAccount> _usersByEmail = {};
   final Map<String, AppUser> _profiles = {};
-  final Map<String, bool> alertPreferences = {};
+  final Map<String, Map<String, dynamic>> userSettings = {};
   final Map<String, Map<String, SavedCampsite>> _saved = {};
   final Map<String, TripRecord> _trips = {};
   final Map<String, Map<String, Map<String, String>>> responses = {};
