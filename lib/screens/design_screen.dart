@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -414,9 +415,9 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
       case 'Try location again':
         final status = _explore.state.location;
         final location = context.read<LocationRepository>();
-        if (status == LocationStatus.deniedForever) {
+        if (status == LocationStatus.deniedForever && !kIsWeb) {
           await location.openAppSettings();
-        } else if (status == LocationStatus.serviceDisabled) {
+        } else if (status == LocationStatus.serviceDisabled && !kIsWeb) {
           await location.openLocationSettings();
         } else {
           await _locate();
@@ -1085,7 +1086,7 @@ class _DesignScreenState extends State<DesignScreen> implements PageControls {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '$when · ${f.days.first.summary}',
+                '$when · ${f.headline}',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               Text(

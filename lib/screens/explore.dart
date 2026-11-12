@@ -48,7 +48,7 @@ List<Widget> _discovery(PageControls ui, {required bool guest}) {
             : 'Santa Cruz, California  ›',
         weight: FontWeight.w500,
       ),
-      _label('Search by city or park  →', size: 12, color: muted),
+      _label('Search by city or park  ›', size: 12, color: muted),
     ], onTap: () => ui.goTo(guest ? 'searchguest' : 'search')),
     if (!guest)
       Row(

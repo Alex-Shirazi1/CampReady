@@ -97,7 +97,7 @@ List<Widget> _tripconditionsBody(PageControls ui) => [
 List<Widget> _tripupdatedHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('Dates updated', size: 26, weight: FontWeight.bold),
-  _label('Your group gets a push and sees the new dates.'),
+  _label('Your group gets a trip update with the new dates.'),
 ];
 
 List<Widget> _tripupdatedBody(PageControls ui) => [
@@ -161,7 +161,9 @@ List<Widget> _shareBody(PageControls ui) => [
 List<Widget> _sharedHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('Invitation sent', size: 26, weight: FontWeight.bold),
-  _label('They get a push and see this trip after signing in with that email.'),
+  _label(
+    'They get a trip update and see this trip after signing in with that email.',
+  ),
 ];
 
 List<Widget> _sharedBody(PageControls ui) => [
@@ -290,8 +292,8 @@ List<Widget> _alertsBody(PageControls ui) => ui.notifications.isEmpty
           ], onTap: () => ui.act('Open update: ${notification.id}')),
         _label(
           ui.alertsOn
-              ? 'Push notifications are on for this account.'
-              : 'Push notifications are off. Turn them on in preferences.',
+              ? 'Trip alerts are on for this account.'
+              : 'Trip alerts are off. Turn them on in preferences.',
           size: 12,
           color: muted,
         ),

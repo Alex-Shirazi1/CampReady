@@ -80,7 +80,7 @@ List<Widget> _bookingResponseBody(PageControls ui) => [
 List<Widget> _yourCampingGroupHeader(PageControls ui) => [
   _button('‹ Back', ui.back),
   _label('Your camping group', size: 26, weight: FontWeight.bold),
-  _label('Everyone sees date changes as soon as you save them.'),
+  _label('Your group sees changes when they open or refresh the trip.'),
 ];
 
 List<Widget> _yourCampingGroupBody(PageControls ui) => [
