@@ -232,9 +232,12 @@ GoRouter buildRouter({
       final suffix = canonical == 'detail' ? '' : '/$canonical';
       return '/campsite/$site$suffix$query';
     }
-    final owned = trips.state.trips.where((t) => t.isOwner);
-    final first = owned.isNotEmpty
-        ? owned.first
+    // Invitee screens open a trip shared with you; the rest your own.
+    final forInvitee =
+        canonical == 'you-re-invited' || canonical == 'you-joined-the-trip';
+    final preferred = trips.state.trips.where((t) => t.isOwner != forInvitee);
+    final first = preferred.isNotEmpty
+        ? preferred.first
         : trips.state.trips.isEmpty
         ? null
         : trips.state.trips.first;
