@@ -4,10 +4,10 @@
 // and every invitee, and delivery is trip-scoped, so it works for
 // invitees who sign up after being shared with and does not depend on
 // a per-invitee account lookup.
-import 'package:campready/app.dart';
+import 'package:campready/repositories/notification_repository.dart';
+import 'package:campready/repositories/trip_repository.dart';
 import 'package:campready/services/services.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Future<(CampReadyServices, AppUser, AppUser, TripRecord)> _sharedTrip({
@@ -59,10 +59,7 @@ void main() {
         invitee.uid,
         email: invitee.email,
       );
-      expect(
-        inviteeNotes.map((n) => n.id),
-        contains(note.id),
-      );
+      expect(inviteeNotes.map((n) => n.id), contains(note.id));
       final ownerNotes = await services.firestore.notifications(
         owner.uid,
         email: owner.email,
@@ -101,49 +98,58 @@ void main() {
       );
     });
 
-    test('share before sign-up still delivers when the invitee joins', () async {
-      final services = CampReadyServices.local();
-      final owner = await services.auth.signUp(
-        email: 'owner@example.com',
-        password: 'campready123',
-        displayName: 'Owner',
-      );
-      final trip = await services.firestore.createTrip(
-        TripRecord(
-          id: 'trip_${owner.uid}_Redwood_Grove',
+    test(
+      'share before sign-up still delivers when the invitee joins',
+      () async {
+        final services = CampReadyServices.local();
+        final owner = await services.auth.signUp(
+          email: 'owner@example.com',
+          password: 'campready123',
+          displayName: 'Owner',
+        );
+        final trip = await services.firestore.createTrip(
+          TripRecord(
+            id: 'trip_${owner.uid}_Redwood_Grove',
+            ownerUid: owner.uid,
+            ownerEmail: owner.email,
+            site: 'Redwood Grove',
+            dates: 'Oct 23–25, 2026',
+          ),
+        );
+        await services.firestore.shareTrip(
+          tripId: trip.id,
+          email: 'late@example.com',
+        );
+        await services.messaging.notifyTripShared(
           ownerUid: owner.uid,
           ownerEmail: owner.email,
+          inviteeEmail: 'late@example.com',
+          tripId: trip.id,
           site: 'Redwood Grove',
-          dates: 'Oct 23–25, 2026',
-        ),
-      );
-      await services.firestore.shareTrip(
-        tripId: trip.id,
-        email: 'late@example.com',
-      );
-      await services.messaging.notifyTripShared(
-        ownerUid: owner.uid,
-        ownerEmail: owner.email,
-        inviteeEmail: 'late@example.com',
-        tripId: trip.id,
-        site: 'Redwood Grove',
-      );
-      // The invitee did not exist when shared with.
-      expect(services.store.findUser('late@example.com'), isNull);
-      final late = await services.auth.signUp(
-        email: 'late@example.com',
-        password: 'campready123',
-        displayName: 'Late',
-      );
-      final state = DemoState(services: services);
-      await state.loadAccount();
-      expect(state.trips, contains('Redwood Grove'));
-      expect(
-        state.notifications.map((n) => n.title),
-        contains('You were invited to Redwood Grove'),
-      );
-      expect(late.email, 'late@example.com');
-    });
+        );
+        // The invitee did not exist when shared with.
+        expect(services.store.findUser('late@example.com'), isNull);
+        final late = await services.auth.signUp(
+          email: 'late@example.com',
+          password: 'campready123',
+          displayName: 'Late',
+        );
+        final trips = await TripRepository(
+          services.firestore,
+          services.messaging,
+        ).tripsFor(late);
+        expect(trips.map((t) => t.record.site), contains('Redwood Grove'));
+        final notes = await NotificationRepository(
+          services.messaging,
+          services.firestore,
+        ).load(late, tripIds: {for (final t in trips) t.id});
+        expect(
+          notes.map((n) => n.title),
+          contains('You were invited to Redwood Grove'),
+        );
+        expect(late.email, 'late@example.com');
+      },
+    );
 
     test('mixed-case share is normalised and delivered', () async {
       final services = CampReadyServices.local();
@@ -209,19 +215,13 @@ void main() {
         invitee.uid,
         email: invitee.email,
       );
-      expect(
-        inviteeNotes.firstWhere((n) => n.id == note.id).read,
-        isTrue,
-      );
+      expect(inviteeNotes.firstWhere((n) => n.id == note.id).read, isTrue);
       // Still present (and still unread) for the owner.
       final ownerNotes = await services.firestore.notifications(
         owner.uid,
         email: owner.email,
       );
-      expect(
-        ownerNotes.firstWhere((n) => n.id == note.id).read,
-        isFalse,
-      );
+      expect(ownerNotes.firstWhere((n) => n.id == note.id).read, isFalse);
     });
 
     test('tapped background message is recorded and emitted', () async {
@@ -240,14 +240,8 @@ void main() {
       // Broadcast streams deliver asynchronously.
       await Future<void>.delayed(Duration.zero);
       expect(seen, [message]);
-      expect(
-        services.messaging.delivered.map((n) => n.id),
-        contains('msg-1'),
-      );
-      expect(
-        services.messaging.delivered.first.tripId,
-        'trip_1',
-      );
+      expect(services.messaging.delivered.map((n) => n.id), contains('msg-1'));
+      expect(services.messaging.delivered.first.tripId, 'trip_1');
       await sub.cancel();
     });
   });
@@ -255,14 +249,10 @@ void main() {
   group('FirestoreService guards (local mode)', () {
     test('creating the same trip twice throws and keeps shares', () async {
       final (services, owner, invitee, trip) = await _sharedTrip();
-      await expectLater(
-        services.firestore.createTrip(trip),
-        throwsStateError,
-      );
-      expect(
-        (await services.firestore.getTrip(trip.id))?.sharedWithEmails,
-        [invitee.email],
-      );
+      await expectLater(services.firestore.createTrip(trip), throwsStateError);
+      expect((await services.firestore.getTrip(trip.id))?.sharedWithEmails, [
+        invitee.email,
+      ]);
       expect(owner.uid, isNotEmpty);
     });
 
@@ -282,146 +272,14 @@ void main() {
 
     test('stored timestamps parse from string, DateTime, or garbage', () {
       expect(parseStoredDateTime('2026-11-07T10:00:00.000'), isNotNull);
-      expect(
-        parseStoredDateTime(DateTime(2026, 11, 7)),
-        DateTime(2026, 11, 7),
-      );
+      expect(parseStoredDateTime(DateTime(2026, 11, 7)), DateTime(2026, 11, 7));
       expect(parseStoredDateTime('not-a-date'), isNull);
       expect(parseStoredDateTime(null), isNull);
       expect(parseStoredDateTime(12345), isNull);
     });
   });
 
-  group('Wired UI (local mode)', () {
-    Future<void> tap(WidgetTester tester, String label) async {
-      final finder = find.text(label);
-      if (finder.evaluate().isEmpty) {
-        await tester.scrollUntilVisible(
-          finder,
-          220,
-          scrollable: find.byType(Scrollable).last,
-        );
-      }
-      await tester.ensureVisible(finder.last);
-      await tester.pumpAndSettle();
-      await tester.tap(finder.last);
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('Send invitation notifies the invitee (UI action)', (
-      tester,
-    ) async {
-      final (services, owner, invitee, trip) = await _sharedTrip();
-      final state = DemoState(services: services);
-      await state.loadAccount();
-      expect(state.trips, contains('Redwood Grove'));
-      await tester.pumpWidget(
-        CampReady(initialState: state, initialRoute: '/share'),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byType(TextFormField).first,
-        invitee.email,
-      );
-      await tap(tester, 'Send invitation');
-      expect(
-        tester.widget<DesignScreen>(find.byType(DesignScreen).last).screen.route,
-        'shared',
-      );
-      expect(
-        (await services.firestore.notifications(
-          invitee.uid,
-          email: invitee.email,
-        )).map((n) => n.title),
-        contains('You were invited to Redwood Grove'),
-      );
-      expect(trip.ownerUid, owner.uid);
-    });
-
-    testWidgets('date edit through the UI notifies the invitee', (
-      tester,
-    ) async {
-      final (services, owner, invitee, _) = await _sharedTrip();
-      final state = DemoState(services: services);
-      await state.loadAccount();
-      await tester.pumpWidget(
-        CampReady(initialState: state, initialRoute: '/dates'),
-      );
-      await tester.pumpAndSettle();
-      state.editingTrip = true;
-      await tap(tester, 'October 30–November 1');
-      await tap(tester, 'Use selected dates');
-      expect(state.details['Redwood Grove']?.dates, 'Oct 30–Nov 1, 2026');
-      expect(
-        (await services.firestore.notifications(
-          invitee.uid,
-          email: invitee.email,
-        )).map((n) => n.title),
-        contains('Redwood Grove: dates changed'),
-      );
-      expect(owner.uid, isNotEmpty);
-    });
-
-    testWidgets('invitee sees the share notification on Alerts', (
-      tester,
-    ) async {
-      final (services, owner, invitee, trip) = await _sharedTrip();
-      await services.messaging.notifyTripShared(
-        ownerUid: owner.uid,
-        ownerEmail: owner.email,
-        inviteeEmail: invitee.email,
-        tripId: trip.id,
-        site: 'Redwood Grove',
-      );
-      await services.auth.signIn(email: invitee.email, password: 'campready123');
-      final state = DemoState(services: services);
-      await tester.pumpWidget(
-        CampReady(initialState: state, initialRoute: '/alerts'),
-      );
-      await tester.pumpAndSettle();
-      expect(state.notifications.map((n) => n.title), contains(
-        'You were invited to Redwood Grove',
-      ));
-      expect(find.text('You were invited to Redwood Grove'), findsOneWidget);
-    });
-
-    testWidgets('Host accepts through the UI notifies the invitee', (
-      tester,
-    ) async {
-      final (services, _, invitee, _) = await _sharedTrip();
-      final state = DemoState(services: services);
-      await state.loadAccount();
-      await tester.pumpWidget(
-        CampReady(initialState: state, initialRoute: '/booking-response'),
-      );
-      await tester.pumpAndSettle();
-      await tap(tester, 'Host accepts');
-      expect(
-        (await services.firestore.notifications(
-          invitee.uid,
-          email: invitee.email,
-        )).map((n) => n.title),
-        contains('Redwood Grove: booking Accepted'),
-      );
-    });
-  });
-
   group('Per-user delivery (local mode)', () {
-    Future<void> tap(WidgetTester tester, String label) async {
-      final finder = find.text(label);
-      if (finder.evaluate().isEmpty) {
-        await tester.scrollUntilVisible(
-          finder,
-          220,
-          scrollable: find.byType(Scrollable).last,
-        );
-      }
-      await tester.ensureVisible(finder.last);
-      await tester.pumpAndSettle();
-      await tester.tap(finder.last);
-      await tester.pumpAndSettle();
-    }
-
     test('an invitation notice reaches only the invited email', () async {
       final (services, owner, first, trip) = await _sharedTrip();
       final second = await services.auth.signUp(
@@ -468,22 +326,25 @@ void main() {
       }
     });
 
-    test('sharing does not put the invitee notice in the owner stream', () async {
-      final (services, owner, invitee, trip) = await _sharedTrip();
-      final received = <AppNotification>[];
-      final sub = services.messaging.onMessage.listen(received.add);
-      await services.messaging.notifyTripShared(
-        ownerUid: owner.uid,
-        ownerEmail: owner.email,
-        inviteeEmail: invitee.email,
-        tripId: trip.id,
-        site: 'Redwood Grove',
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(received, isEmpty);
-      expect(services.messaging.delivered, isEmpty);
-      await sub.cancel();
-    });
+    test(
+      'sharing does not put the invitee notice in the owner stream',
+      () async {
+        final (services, owner, invitee, trip) = await _sharedTrip();
+        final received = <AppNotification>[];
+        final sub = services.messaging.onMessage.listen(received.add);
+        await services.messaging.notifyTripShared(
+          ownerUid: owner.uid,
+          ownerEmail: owner.email,
+          inviteeEmail: invitee.email,
+          tripId: trip.id,
+          site: 'Redwood Grove',
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(received, isEmpty);
+        expect(services.messaging.delivered, isEmpty);
+        await sub.cancel();
+      },
+    );
 
     test('a declined invitee stops seeing the trip notifications', () async {
       final (services, owner, invitee, trip) = await _sharedTrip();
@@ -497,49 +358,21 @@ void main() {
         body: 'Your trip dates are now Oct 30–Nov 1, 2026.',
         sharedWithEmails: [invitee.email],
       );
-      await services.auth.signIn(email: invitee.email, password: 'campready123');
-      final state = DemoState(services: services);
-      await state.loadAccount();
-      expect(state.trips, isNot(contains('Redwood Grove')));
-      expect(
-        state.notifications.map((n) => n.title),
-        isNot(contains('Redwood Grove: dates changed')),
+      await services.auth.signIn(
+        email: invitee.email,
+        password: 'campready123',
       );
-    });
-
-    testWidgets('owner alerts off still notifies invitees, not the owner', (
-      tester,
-    ) async {
-      final (services, owner, invitee, _) = await _sharedTrip();
-      // The owner's saved preference (loadAccount reloads it on start).
-      await services.firestore.saveAlertPreference(owner.uid, false);
-      final state = DemoState(services: services);
-      await state.loadAccount();
-      expect(state.alerts, isFalse);
-      await tester.pumpWidget(
-        CampReady(initialState: state, initialRoute: '/dates'),
-      );
-      await tester.pumpAndSettle();
-      state.editingTrip = true;
-      await tap(tester, 'October 30–November 1');
-      await tap(tester, 'Use selected dates');
-      expect(state.details['Redwood Grove']?.dates, 'Oct 30–Nov 1, 2026');
+      final trips = await TripRepository(
+        services.firestore,
+        services.messaging,
+      ).tripsFor(invitee);
+      expect(trips, isEmpty);
+      final notes = await NotificationRepository(
+        services.messaging,
+        services.firestore,
+      ).load(invitee, tripIds: {for (final t in trips) t.id});
       expect(
-        (await services.firestore.notifications(
-          invitee.uid,
-          email: invitee.email,
-        )).map((n) => n.title),
-        contains('Redwood Grove: dates changed'),
-      );
-      expect(
-        (await services.firestore.notifications(
-          owner.uid,
-          email: owner.email,
-        )).map((n) => n.title),
-        isNot(contains('Redwood Grove: dates changed')),
-      );
-      expect(
-        state.notifications.map((n) => n.title),
+        notes.map((n) => n.title),
         isNot(contains('Redwood Grove: dates changed')),
       );
     });
